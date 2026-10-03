@@ -234,6 +234,9 @@ class MainWindow(QMainWindow):
         self.audio_check = QCheckBox("Enregistrer le son de l'ordinateur (son de la réunion)")
         self.audio_check.setChecked(self.settings.value("audio", True, type=bool))
         form.addRow(self.audio_check)
+        self.mic_check = QCheckBox("Enregistrer mon micro (ma voix) — idéal avec un casque")
+        self.mic_check.setChecked(self.settings.value("mic", True, type=bool))
+        form.addRow(self.mic_check)
         self.slides_check = QCheckBox("Détecter et photographier les diapos pendant l'enregistrement")
         self.slides_check.setChecked(self.settings.value("slides", True, type=bool))
         form.addRow(self.slides_check)
@@ -370,6 +373,7 @@ class MainWindow(QMainWindow):
 
         self.settings.setValue("output_dir", self.dir_edit.text())
         self.settings.setValue("audio", self.audio_check.isChecked())
+        self.settings.setValue("mic", self.mic_check.isChecked())
         self.settings.setValue("slides", self.slides_check.isChecked())
         self.settings.setValue("fps", self.fps_spin.value())
 
@@ -380,6 +384,7 @@ class MainWindow(QMainWindow):
             monitor_index=monitor_index,
             fps=self.fps_spin.value(),
             record_audio=self.audio_check.isChecked(),
+            record_mic=self.mic_check.isChecked(),
             detect_slides=self.slides_check.isChecked(),
             detector_settings=DetectorSettings(zone=self.record_zone),
             on_slide=lambda s: self.bridge.slide.emit(str(s.image_path)),
@@ -511,15 +516,41 @@ class MainWindow(QMainWindow):
         el.addWidget(self.progress)
         layout.addWidget(ext_box)
 
-        exp_box = QGroupBox("Diapos maison et synchronisation Plaud")
+        tr_box = QGroupBox("Transcription sur ce PC (sans Plaud, rien n'est envoyé sur Internet)")
+        tl = QFormLayout(tr_box)
+        from .transcribe import DEFAULT_MODEL, MODELS
+
+        self.model_combo = QComboBox()
+        for label, name in MODELS.items():
+            self.model_combo.addItem(label, name)
+        saved = self.settings.value("model", DEFAULT_MODEL)
+        self.model_combo.setCurrentIndex(max(0, self.model_combo.findData(saved)))
+        tl.addRow("Qualité", self.model_combo)
+        self.vocab_edit = QLineEdit(self.settings.value("vocabulary", ""))
+        self.vocab_edit.setPlaceholderText("Optionnel : noms et termes difficiles (ex. RCP, pembrolizumab, Dr Le Gall)")
+        tl.addRow("Vocabulaire", self.vocab_edit)
+        self.transcribe_btn = QPushButton("Transcrire")
+        self.transcribe_btn.clicked.connect(self._transcribe)
+        tr_hint = QLabel(
+            "Le modèle est téléchargé une seule fois (connexion nécessaire la 1ʳᵉ fois), "
+            "ensuite tout se fait hors ligne. Avec le micro enregistré, on sait qui parle "
+            "(« Moi » / « Participants »). Durée indicative pour 1 h : 10 à 20 min en Rapide, "
+            "nettement plus en Précis."
+        )
+        tr_hint.setWordWrap(True)
+        tr_hint.setStyleSheet("color: gray;")
+        tl.addRow(self.transcribe_btn, tr_hint)
+        layout.addWidget(tr_box)
+
+        exp_box = QGroupBox("Diapos maison et synchronisation")
         form = QFormLayout(exp_box)
         self.template_edit = QLineEdit(self.settings.value("template", ""))
         self.template_edit.setPlaceholderText("Optionnel : votre modèle .potx / .pptx (logo, bandeau…)")
         form.addRow("Modèle PowerPoint", self._with_browse(
             self.template_edit, "Modèle PowerPoint", "PowerPoint (*.potx *.pptx)"))
         self.transcript_edit = QLineEdit()
-        self.transcript_edit.setPlaceholderText("Optionnel : export Plaud horodaté (.txt, .srt, .docx)")
-        form.addRow("Transcription Plaud", self._with_browse(
+        self.transcript_edit.setPlaceholderText("Celle du logiciel (ci-dessus) ou un export Plaud horodaté")
+        form.addRow("Transcription", self._with_browse(
             self.transcript_edit, "Transcription", "Transcription (*.txt *.srt *.vtt *.docx)"))
         self.plaud_time = QTimeEdit()
         self.plaud_time.setDisplayFormat("HH:mm:ss")
@@ -530,9 +561,8 @@ class MainWindow(QMainWindow):
         self.fine_offset.setSuffix(" s")
         form.addRow("Ajustement fin", self.fine_offset)
         sync_hint = QLabel(
-            "Indiquez l'heure à laquelle vous avez lancé le Plaud : chaque phrase est alors "
-            "rattachée à la diapo affichée au même moment. Le son de l'ordinateur (son.mp3) "
-            "peut aussi être importé dans l'appli Plaud pour une meilleure transcription."
+            "Heure du Plaud : uniquement pour un export Plaud (l'heure à laquelle vous l'avez "
+            "lancé). La transcription du logiciel est déjà calée sur la vidéo."
         )
         sync_hint.setWordWrap(True)
         sync_hint.setStyleSheet("color: gray;")
@@ -600,6 +630,8 @@ class MainWindow(QMainWindow):
             self.plaud_time.setTime(QTime(start.hour, start.minute, start.second))
         # Sans heure de début (vidéo importée), seul l'ajustement manuel est utilisable.
         self.plaud_time.setEnabled(bool(start))
+        own = session.folder / session.transcript if session.transcript else None
+        self.transcript_edit.setText(str(own) if own and own.exists() else "")
 
     def _need_session(self, with_slides: bool = False) -> bool:
         if self.session is None:
@@ -686,7 +718,8 @@ class MainWindow(QMainWindow):
             return
         transcript = self._transcript()
         if not transcript:
-            QMessageBox.information(self, "Compte-rendu", "Choisissez la transcription Plaud.")
+            QMessageBox.information(self, "Compte-rendu",
+                                    "Lancez d'abord « Transcrire », ou choisissez un export Plaud.")
             return
         from .workflow import make_report
 
@@ -696,6 +729,37 @@ class MainWindow(QMainWindow):
         self.report_btn.setEnabled(False)
         self._run(task)
 
+    def _transcribe(self) -> None:
+        if not self._need_session():
+            return
+        from .transcribe import transcribe_session
+
+        model = self.model_combo.currentData()
+        vocabulary = self.vocab_edit.text().strip()
+        self.settings.setValue("model", model)
+        self.settings.setValue("vocabulary", vocabulary)
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.transcribe_btn.setEnabled(False)
+        self.transcribe_btn.setText("Transcription…")
+        session = self.session
+        task = Task(lambda: transcribe_session(session, model, vocabulary,
+                                               progress=task.progress.emit))
+        task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
+        task.done.connect(self._transcribed, Q)
+        task.failed.connect(self._task_failed, Q)
+        self._run(task)
+
+    def _transcribed(self, path: Path) -> None:
+        self.progress.setVisible(False)
+        self.transcribe_btn.setEnabled(True)
+        self.transcribe_btn.setText("Transcrire")
+        self.transcript_edit.setText(str(path))
+        if QMessageBox.question(
+            self, "Transcription", f"Transcription terminée :\n{path.with_suffix('.txt')}\n\nL'ouvrir ?"
+        ) == QMessageBox.StandardButton.Yes:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.with_suffix(".txt"))))
+
     def _created(self, path: Path, button: QPushButton) -> None:
         button.setEnabled(True)
         if QMessageBox.question(self, "Créé", f"Fichier créé :\n{path}\n\nL'ouvrir ?") \
@@ -704,8 +768,9 @@ class MainWindow(QMainWindow):
 
     def _task_failed(self, message: str) -> None:
         self.progress.setVisible(False)
-        for b in (self.extract_btn, self.pptx_btn, self.report_btn):
+        for b in (self.extract_btn, self.pptx_btn, self.report_btn, self.transcribe_btn):
             b.setEnabled(True)
+        self.transcribe_btn.setText("Transcrire")
         QMessageBox.warning(self, "Erreur", message)
 
     def _run(self, task: Task) -> None:

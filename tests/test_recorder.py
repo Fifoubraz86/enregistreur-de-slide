@@ -105,3 +105,47 @@ def test_monitor_target_is_passed_to_capture(tmp_path, monkeypatch):
                          record_audio=False, detect_slides=False)
     assert seen == {"hwnd": None, "monitor_index": 1}
     assert r.session.window_title == "Écran 1"
+
+
+def test_recording_with_two_audio_tracks(tmp_path, monkeypatch, fast_settings):
+    """Son de l'ordinateur + micro : vidéo avec son mélangé, son.mp3 et pistes séparées."""
+    import wave
+
+    from capture_reunion import audio as audio_mod
+
+    try:
+        find_ffmpeg()
+    except FileNotFoundError:
+        pytest.skip("ffmpeg absent")
+
+    class FakeAudio:
+        def __init__(self, path, mode="loopback"):
+            self.path, self.mode, self.start_time = path, mode, None
+
+        def start(self):
+            self.start_time = time.monotonic() - 0.5  # démarré un peu avant l'image
+
+        def stop(self):
+            rate, channels = 48000, 2 if self.mode == "loopback" else 1
+            n = int((time.monotonic() - self.start_time) * rate)
+            t = np.arange(n) / rate
+            tone = (8000 * np.sin(2 * np.pi * (440 if channels == 2 else 220) * t)).astype(np.int16)
+            with wave.open(str(self.path), "wb") as w:
+                w.setnchannels(channels)
+                w.setsampwidth(2)
+                w.setframerate(rate)
+                w.writeframes(np.repeat(tone, channels).tobytes())
+
+    monkeypatch.setattr(rec_mod, "_WindowSource", FakeSource)
+    monkeypatch.setattr(audio_mod, "AudioRecorder", FakeAudio)
+    r = rec_mod.Recorder(1, tmp_path, window_title="Zoom", fps=10, record_audio=True,
+                         record_mic=True, detector_settings=fast_settings)
+    r.start()
+    time.sleep(3)
+    session = r.stop()
+
+    assert session.audio == "son.mp3" and (session.folder / "son.mp3").exists()
+    assert session.tracks == {"participants": "piste_participants.m4a", "moi": "piste_moi.m4a"}
+    assert all((session.folder / f).exists() for f in session.tracks.values())
+    assert not list(session.folder.glob("*_temp.wav")) and not list(session.folder.glob("*temp*"))
+    assert Session.load(session.folder).tracks == session.tracks

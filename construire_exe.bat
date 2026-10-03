@@ -10,6 +10,8 @@ if not exist .venv\Scripts\python.exe (
 .venv\Scripts\python -m PyInstaller --noconfirm --windowed --name CaptureReunion ^
   --collect-all windows_capture --collect-all pyaudiowpatch --collect-all imageio_ffmpeg ^
   --collect-data pptx --collect-data docx ^
+  --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime ^
+  --collect-all av --collect-all tokenizers ^
   lancer.py || goto erreur
 echo.
 echo Termine : dist\CaptureReunion\CaptureReunion.exe

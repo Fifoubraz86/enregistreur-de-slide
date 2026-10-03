@@ -69,3 +69,30 @@ def mux(video: Path, audio: Path, output: Path, audio_delay: float = 0.0) -> Non
 def to_mp3(audio: Path, output: Path, delay: float = 0.0) -> None:
     pre = ["-ss", f"{delay:.3f}"] if delay > 0 else []
     run_ffmpeg([*pre, "-i", str(audio), "-c:a", "libmp3lame", "-b:a", "128k", str(output)])
+
+
+def mix_audio(inputs: list[tuple[Path, float]], output: Path) -> None:
+    """Mélange plusieurs pistes (chemin, secondes à couper au début) en un WAV stéréo."""
+    args: list[str] = []
+    filters: list[str] = []
+    for i, (path, delay) in enumerate(inputs):
+        args += ["-i", str(path)]
+        filters.append(
+            f"[{i}:a]atrim=start={delay:.3f},asetpts=PTS-STARTPTS,"
+            f"aresample=48000,aformat=channel_layouts=stereo[a{i}]"
+        )
+    if len(inputs) == 1:
+        out = "[a0]"
+    else:
+        labels = "".join(f"[a{i}]" for i in range(len(inputs)))
+        filters.append(f"{labels}amix=inputs={len(inputs)}:duration=longest:normalize=0[out]")
+        out = "[out]"
+    run_ffmpeg([*args, "-filter_complex", ";".join(filters), "-map", out,
+                "-c:a", "pcm_s16le", str(output)])
+
+
+def export_track(audio: Path, output: Path, delay: float = 0.0) -> None:
+    """Piste légère (mono 16 kHz), suffisante pour la transcription."""
+    pre = ["-ss", f"{delay:.3f}"] if delay > 0 else []
+    run_ffmpeg([*pre, "-i", str(audio), "-ac", "1", "-ar", "16000",
+                "-c:a", "aac", "-b:a", "48k", str(output)])

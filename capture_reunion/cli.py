@@ -57,14 +57,21 @@ def main(argv: list[str] | None = None) -> int:
     ext.add_argument("--stabilite", type=float, default=2.0, help="secondes de stabilité (défaut 2)")
     ext.add_argument("--seuil", type=float, default=0.97, help="seuil SSIM de changement (défaut 0.97)")
 
+    tr = sub.add_parser("transcrire", help="transcrit le son sur ce PC (sans Plaud)")
+    tr.add_argument("session", type=Path, help="dossier de session ou fichier vidéo")
+    tr.add_argument("--modele", default="small",
+                    help="small (rapide), medium (précis) ou large-v3-turbo (très précis)")
+    tr.add_argument("--vocabulaire", default="",
+                    help="mots difficiles à reconnaître (noms, termes médicaux), séparés par des virgules")
+
     for name, help_text in (
         ("pptx", "crée le PowerPoint des diapos"),
         ("compte-rendu", "crée le document Word diapo + transcription"),
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("session", type=Path, help="dossier de session")
-        p.add_argument("--transcription", type=Path, required=name == "compte-rendu",
-                       help="export Plaud (.txt, .srt, .vtt, .docx)")
+        p.add_argument("--transcription", type=Path,
+                       help="export Plaud (.txt, .srt, .vtt, .docx) ; par défaut, celle du logiciel")
         p.add_argument("--debut-plaud", help="heure de début de l'enregistrement Plaud (HH:MM:SS)")
         p.add_argument("--decalage", type=float,
                        help="secondes à ajouter aux horodatages Plaud (prioritaire sur --debut-plaud)")
@@ -105,6 +112,22 @@ def main(argv: list[str] | None = None) -> int:
 
         extract_slides(session, settings, progress)
         print(f"\n{len(session.slides)} diapos dans {session.slides_dir}")
+        return 0
+
+    if args.cmd == "transcrire":
+        from .transcribe import transcribe_session
+
+        session = _load_session(args.session)
+        last = [-1]
+
+        def progress(p: float) -> None:
+            pct = int(p * 100)
+            if pct != last[0]:
+                last[0] = pct
+                print(f"\rTranscription : {pct:3d} %", end="", flush=True)
+
+        out = transcribe_session(session, args.modele, args.vocabulaire, progress)
+        print(f"\nCréé : {out}")
         return 0
 
     from .workflow import compute_offset, make_pptx, make_report

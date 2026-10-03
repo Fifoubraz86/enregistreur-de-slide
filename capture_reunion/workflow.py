@@ -53,6 +53,21 @@ def compute_offset(
     return 0.0
 
 
+def resolve_transcript(
+    session: Session, transcript: Optional[Path], offset: float
+) -> tuple[Optional[Path], float]:
+    """Sans fichier indiqué, prend la transcription faite par le logiciel.
+
+    Celle-ci est déjà horodatée sur la vidéo : le décalage est alors nul.
+    """
+    own = session.folder / session.transcript if session.transcript else None
+    if transcript is None:
+        return (own, 0.0) if own and own.exists() else (None, offset)
+    if own and Path(transcript).resolve() == own.resolve():
+        return Path(transcript), 0.0
+    return Path(transcript), offset
+
+
 def sections_for(session: Session, transcript: Path, offset: float) -> list[SlideSection]:
     segments = load_transcript(transcript)
     return assign_segments(session.timeline, segments, offset, session.duration or None)
@@ -66,6 +81,7 @@ def make_pptx(
     output: Optional[Path] = None,
 ) -> Path:
     images = session.slide_paths()
+    transcript, offset = resolve_transcript(session, transcript, offset)
     notes = None
     if transcript:
         notes = notes_by_slide(sections_for(session, transcript, offset), offset)
@@ -80,10 +96,13 @@ def make_pptx(
 
 def make_report(
     session: Session,
-    transcript: Path,
+    transcript: Optional[Path] = None,
     offset: float = 0.0,
     output: Optional[Path] = None,
 ) -> Path:
+    transcript, offset = resolve_transcript(session, transcript, offset)
+    if transcript is None:
+        raise ValueError("Aucune transcription : lancez « Transcrire » ou choisissez un export Plaud.")
     sections = sections_for(session, transcript, offset)
     images = {s.index: session.folder / s.file for s in session.slides}
     start = session.start_datetime

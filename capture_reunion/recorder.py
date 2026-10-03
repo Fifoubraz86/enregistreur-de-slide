@@ -135,6 +135,7 @@ class Recorder:
         window_title: str = "",
         fps: int = 15,
         record_audio: bool = True,
+        record_mic: bool = False,
         detect_slides: bool = True,
         detector_settings: Optional[DetectorSettings] = None,
         max_height: int = 1080,
@@ -148,6 +149,7 @@ class Recorder:
         self.monitor_index = monitor_index
         self.fps = max(1, int(fps))
         self.record_audio = record_audio
+        self.record_mic = record_mic
         self.max_height = max_height
         self.detector_settings = detector_settings or DetectorSettings()
         self.started = datetime.now()
@@ -169,7 +171,7 @@ class Recorder:
         )
         self.audio_warning = ""
         self._source = _WindowSource(hwnd, on_closed=on_window_closed, monitor_index=monitor_index)
-        self._audio = None
+        self._audio_tracks: list[tuple[str, object]] = []  # (piste, AudioRecorder)
         self._encoder = None
         self._log = None
         self._t0 = 0.0
@@ -198,22 +200,28 @@ class Recorder:
     # -- démarrage -------------------------------------------------------
     def start(self) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
-        if self.record_audio:
-            from .audio import LoopbackRecorder
+        from .audio import AudioRecorder
 
-            self._audio = LoopbackRecorder(self.folder / "son_temp.wav")
+        warnings = []
+        wanted = [("participants", "loopback", self.record_audio, "Son de l'ordinateur"),
+                  ("moi", "micro", self.record_mic, "Micro")]
+        for track, mode, enabled, name in wanted:
+            if not enabled:
+                continue
+            audio = AudioRecorder(self.folder / f"{track}_temp.wav", mode)
             try:
-                self._audio.start()
+                audio.start()
+                self._audio_tracks.append((track, audio))
             except Exception as exc:
-                self.audio_warning = f"Son de l'ordinateur non enregistré : {exc}"
-                self._audio = None
+                warnings.append(f"{name} non enregistré : {exc}")
+        self.audio_warning = "\n".join(warnings)
 
         try:
             self._source.start()
         except Exception:
-            if self._audio:
-                self._audio.stop()
-                self._audio.path.unlink(missing_ok=True)
+            for _, audio in self._audio_tracks:
+                audio.stop()
+                audio.path.unlink(missing_ok=True)
             try:
                 self.folder.rmdir()  # ne supprime le dossier que s'il est vide
             except OSError:
@@ -274,8 +282,8 @@ class Recorder:
         self._source.stop()
         for t in self._threads:
             t.join(timeout=10)
-        if self._audio:
-            self._audio.stop()
+        for _, audio in self._audio_tracks:
+            audio.stop()
 
         problems: list[str] = []
         if self._encoder_error:
@@ -294,14 +302,25 @@ class Recorder:
         self.session.duration = round(min(stop_time - self._t0, self._frames_written / self.fps), 2)
         raw_video = self.folder / "video_temp.mp4"
         video = self.folder / "video.mp4"
+        tracks = [(name, a) for name, a in self._audio_tracks if a.path.exists()]
         try:
-            if self._audio and self._audio.path.exists():
-                delay = max(0.0, self._t0 - self._audio.start_time)
-                ffmpeg_utils.mux(raw_video, self._audio.path, video, audio_delay=delay)
-                ffmpeg_utils.to_mp3(self._audio.path, self.folder / "son.mp3", delay=delay)
+            if tracks:
+                # Chaque piste est recalée sur le début de la vidéo.
+                inputs = [(a.path, max(0.0, self._t0 - a.start_time)) for _, a in tracks]
+                mixed = self.folder / "mix_temp.wav"
+                ffmpeg_utils.mix_audio(inputs, mixed)
+                ffmpeg_utils.mux(raw_video, mixed, video)
+                ffmpeg_utils.to_mp3(mixed, self.folder / "son.mp3")
                 self.session.audio = "son.mp3"
+                # Pistes séparées (16 kHz mono) : la transcription sait ainsi qui parle.
+                for (name, a), (path, delay) in zip(tracks, inputs):
+                    out = f"piste_{name}.m4a"
+                    ffmpeg_utils.export_track(path, self.folder / out, delay)
+                    self.session.tracks[name] = out
                 raw_video.unlink()
-                self._audio.path.unlink()
+                mixed.unlink()
+                for path, _ in inputs:
+                    path.unlink()
             else:
                 raw_video.replace(video)
             self.session.video = "video.mp4"

@@ -1,5 +1,9 @@
-"""Enregistrement du son de l'ordinateur (WASAPI loopback) : ce que vous entendez
-dans le casque ou les haut-parleurs, donc le son de la réunion."""
+"""Enregistrement audio WASAPI :
+
+- « loopback » : le son de l'ordinateur, ce que vous entendez dans le casque ou
+  les haut-parleurs (les autres participants) ;
+- « micro » : votre micro (votre propre voix, que le loopback ne contient pas).
+"""
 
 from __future__ import annotations
 
@@ -10,8 +14,9 @@ from pathlib import Path
 from typing import Optional
 
 
-class LoopbackRecorder:
-    """Enregistre la sortie audio par défaut dans un fichier WAV.
+class AudioRecorder:
+    """Enregistre la sortie audio (``mode="loopback"``) ou le micro (``mode="micro"``)
+    par défaut dans un fichier WAV.
 
     WASAPI ne fournit aucune donnée quand rien n'est joué : on comble ces
     silences avec des zéros pour que le son reste synchronisé avec la vidéo.
@@ -19,8 +24,11 @@ class LoopbackRecorder:
 
     GAP_TOLERANCE = 0.2  # secondes
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, mode: str = "loopback") -> None:
+        if mode not in ("loopback", "micro"):
+            raise ValueError(mode)
         self.path = Path(path)
+        self.mode = mode
         self.start_time: Optional[float] = None
         self.device_name = ""
         self._pa = None
@@ -44,19 +52,25 @@ class LoopbackRecorder:
         except OSError as exc:
             self._pa.terminate()
             raise RuntimeError("WASAPI indisponible sur ce système.") from exc
-        speakers = self._pa.get_device_info_by_index(wasapi["defaultOutputDevice"])
-        if not speakers.get("isLoopbackDevice"):
-            for loopback in self._pa.get_loopback_device_info_generator():
-                if speakers["name"] in loopback["name"]:
-                    speakers = loopback
-                    break
-            else:
+        if self.mode == "micro":
+            if wasapi["defaultInputDevice"] < 0:
                 self._pa.terminate()
-                raise RuntimeError("Aucun périphérique de capture du son système trouvé.")
+                raise RuntimeError("Aucun micro trouvé.")
+            device = self._pa.get_device_info_by_index(wasapi["defaultInputDevice"])
+        else:
+            device = self._pa.get_device_info_by_index(wasapi["defaultOutputDevice"])
+            if not device.get("isLoopbackDevice"):
+                for loopback in self._pa.get_loopback_device_info_generator():
+                    if device["name"] in loopback["name"]:
+                        device = loopback
+                        break
+                else:
+                    self._pa.terminate()
+                    raise RuntimeError("Aucun périphérique de capture du son système trouvé.")
 
-        self.device_name = speakers["name"]
-        self._rate = int(speakers["defaultSampleRate"])
-        self._channels = max(1, int(speakers["maxInputChannels"]))
+        self.device_name = device["name"]
+        self._rate = int(device["defaultSampleRate"])
+        self._channels = max(1, min(2, int(device["maxInputChannels"])))
         self._frame_bytes = 2 * self._channels
 
         self._wav = wave.open(str(self.path), "wb")
@@ -70,7 +84,7 @@ class LoopbackRecorder:
             channels=self._channels,
             rate=self._rate,
             input=True,
-            input_device_index=speakers["index"],
+            input_device_index=device["index"],
             frames_per_buffer=int(self._rate * 0.05),
             stream_callback=self._callback,
         )

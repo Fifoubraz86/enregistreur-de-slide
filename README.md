@@ -6,7 +6,8 @@ Logiciel Windows qui :
 2. **enregistre le son de l'ordinateur** (le son de la réunion, propre, sans micro) ;
 3. **photographie automatiquement chaque diapo** du diaporama qui défile ;
 4. **crée un PowerPoint « maison »** à partir de ces photos, avec votre modèle (.potx : logo, bandeau CHU…) ;
-5. **se couple au Plaud** : chaque phrase de la transcription est rattachée à la diapo affichée à ce moment-là (dans les notes du PowerPoint et dans un compte-rendu Word « diapo + ce qui a été dit »).
+5. **transcrit la réunion sur votre PC**, sans Plaud, sans abonnement et sans rien envoyer sur Internet. Le logiciel sait qui parle : « Moi » (votre micro) ou « Participants » (le son de l'ordinateur) ;
+6. **ou se couple au Plaud** : chaque phrase de la transcription est rattachée à la diapo affichée à ce moment-là (dans les notes du PowerPoint et dans un compte-rendu Word « diapo + ce qui a été dit »).
 
 ## Installation (une seule fois)
 
@@ -43,19 +44,27 @@ Deux règles à respecter :
 ```
 2026-10-03_14h30 - Zoom Meeting\
 ├── video.mp4          vidéo + son
-├── son.mp3            son seul (à importer dans l'appli Plaud si besoin)
+├── son.mp3            son seul (mélange micro + ordinateur)
+├── piste_moi.m4a, piste_participants.m4a   pistes séparées pour la transcription
 ├── diapos\            diapo_001_00h00m12s.png, diapo_002_…
 └── session.json       heure de début, horodatage des diapos
 ```
+
+Cochez **« Enregistrer mon micro »** pour que votre propre voix soit enregistrée : le son de l'ordinateur ne contient que les autres participants. Un **casque** est conseillé, sinon le micro capte aussi les haut-parleurs. Le logiciel retire alors ces doublons de la transcription.
 
 ### 2. Diapos et compte-rendu
 
 Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
 
 - **Extraire les diapos de la vidéo** : refait la détection, par exemple avec une autre zone, ou sur une vidéo enregistrée ailleurs (bouton « Ouvrir une autre vidéo… »).
+- **Transcrire** (transcription sur ce PC) :
+  - **Qualité** : *Rapide* (small) suffit souvent. *Précis* (medium) ou *Très précis* (large-v3-turbo) reconnaissent mieux le vocabulaire médical, mais sont plus lents. Pour 1 h de réunion, comptez de l'ordre de 10 à 20 min en Rapide sur un portable récent, nettement plus en Précis.
+  - **Vocabulaire** : mots difficiles (noms propres, molécules, sigles) pour aider la reconnaissance.
+  - Le modèle est téléchargé **une seule fois** (0,5 à 1,6 Go, dans `%LOCALAPPDATA%\CaptureReunion\modeles`). Ensuite, tout fonctionne hors ligne.
+  - Résultat : `transcription.txt` (lisible) et `transcription.srt`, utilisés automatiquement pour le PowerPoint et le compte-rendu.
 - **Modèle PowerPoint** : votre .potx ou .pptx. Chaque photo est centrée sur la diapo. Si votre modèle comporte une disposition avec un espace réservé « Image », la photo est placée dans ce cadre.
-- **Transcription Plaud** : exportez la transcription depuis l'appli Plaud **avec les horodatages** (TXT, SRT ou DOCX).
-- **Heure de début du Plaud** : l'heure à laquelle vous avez lancé l'enregistrement Plaud (visible dans l'appli). Le logiciel connaît l'heure de début de la vidéo et calcule le décalage. « Ajustement fin » permet de corriger de quelques secondes.
+- **Transcription** : celle du logiciel est remplie automatiquement. Vous pouvez aussi choisir un export Plaud : exportez la transcription depuis l'appli Plaud **avec les horodatages** (TXT, SRT ou DOCX).
+- **Heure de début du Plaud** (export Plaud uniquement) : l'heure à laquelle vous avez lancé l'enregistrement Plaud (visible dans l'appli). Le logiciel connaît l'heure de début de la vidéo et calcule le décalage. « Ajustement fin » permet de corriger de quelques secondes.
 - **Créer le PowerPoint** : une diapo par photo. Les notes du présentateur contiennent l'heure d'affichage et, si une transcription est fournie, ce qui a été dit.
 - **Créer le compte-rendu Word** : chaque diapo suivie de la transcription correspondante.
 
@@ -75,6 +84,7 @@ Une image est analysée chaque seconde :
 .venv\Scripts\python -m capture_reunion enregistrer Zoom --zone 0,0,0.8,1
 .venv\Scripts\python -m capture_reunion enregistrer ecran1
 .venv\Scripts\python -m capture_reunion extraire "chemin\video.mp4"
+.venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --vocabulaire "RCP, pembrolizumab"
 .venv\Scripts\python -m capture_reunion pptx "dossier de session" --modele modele.potx --transcription plaud.txt --debut-plaud 14:29:50
 .venv\Scripts\python -m capture_reunion compte-rendu "dossier de session" --transcription plaud.txt --debut-plaud 14:29:50
 ```
@@ -85,5 +95,5 @@ Prévenez les participants avant d'enregistrer (RGPD). En RCP, les données de s
 
 ## Pour les développeurs
 
-- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (Plaud), `gui.py` (PySide6).
+- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (lecture des transcriptions), `transcribe.py` (transcription locale faster-whisper), `gui.py` (PySide6).
 - Tests : `python -m pytest`. Ils tournent aussi hors Windows : la capture est simulée par une fausse fenêtre.

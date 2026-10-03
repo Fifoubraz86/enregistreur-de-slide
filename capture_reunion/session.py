@@ -31,6 +31,10 @@ class Session:
     window_title: str = ""
     video: Optional[str] = None
     audio: Optional[str] = None
+    tracks: dict[str, str] = field(default_factory=dict)
+    """Pistes séparées pour la transcription : {"participants": ..., "moi": ...}."""
+    transcript: Optional[str] = None
+    """Transcription faite par le logiciel (horodatée sur la vidéo)."""
     duration: float = 0.0
     zone: Optional[Zone] = None
     slides: list[SlideRecord] = field(default_factory=list)
@@ -77,6 +81,8 @@ class Session:
         session.window_title = data.get("window_title", "")
         session.video = data.get("video")
         session.audio = data.get("audio")
+        session.tracks = dict(data.get("tracks") or {})
+        session.transcript = data.get("transcript")
         session.duration = float(data.get("duration") or 0.0)
         zone = data.get("zone")
         session.zone = tuple(zone) if zone else None
