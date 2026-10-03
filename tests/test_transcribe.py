@@ -1,8 +1,14 @@
 """Transcription locale, avec un faux modèle Whisper (le vrai se télécharge sur le PC)."""
 
+import subprocess
 from types import SimpleNamespace
 
 import docx
+import numpy as np
+import pytest
+
+from capture_reunion import transcribe as tr_mod
+from capture_reunion.ffmpeg_utils import find_ffmpeg
 
 from capture_reunion.session import Session, SlideRecord
 from capture_reunion.transcribe import Track, remove_echo, transcribe_session, transcribe_tracks
@@ -19,13 +25,31 @@ SCRIPTS = {
 }
 
 
+class FakeAudio(np.ndarray):
+    """Tableau audio qui retient de quel fichier il vient."""
+
+
+def fake_load_audio(path):
+    audio = np.zeros(30 * tr_mod.SAMPLE_RATE, np.float32).view(FakeAudio)
+    audio.name = path.name
+    return audio
+
+
+@pytest.fixture(autouse=True)
+def no_ffmpeg_decode(monkeypatch, request):
+    if "real_decode" not in request.keywords:
+        monkeypatch.setattr(tr_mod, "load_audio", fake_load_audio)
+
+
 class FakeWhisper:
     def __init__(self):
         self.calls = []
 
-    def transcribe(self, path, **kwargs):
-        self.calls.append((path, kwargs))
-        name = path.rsplit("/", 1)[-1]
+    def transcribe(self, audio, **kwargs):
+        # Régression : on transmet le son déjà décodé, jamais un chemin (décodage PyAV).
+        assert isinstance(audio, np.ndarray)
+        self.calls.append((audio.name, kwargs))
+        name = audio.name
         segs = [SimpleNamespace(start=a, end=b, text=t) for a, b, t in SCRIPTS[name]]
         return iter(segs), SimpleNamespace(duration=30.0)
 
@@ -77,3 +101,18 @@ def test_transcribe_session_feeds_report(tmp_path):
     text = "\n".join(p.text for p in docx.Document(str(report)).paragraphs)
     assert text.index("Merci, j'ai une question") < text.index("Diapo 2")
     assert text.index("Diapo 2") < text.index("Voici les résultats")
+
+
+@pytest.mark.real_decode
+def test_load_audio_with_ffmpeg(tmp_path):
+    try:
+        ffmpeg = find_ffmpeg()
+    except FileNotFoundError:
+        pytest.skip("ffmpeg absent")
+    path = tmp_path / "piste.m4a"
+    subprocess.run([ffmpeg, "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    "sine=frequency=440:duration=2", "-ac", "2", "-ar", "48000", str(path)], check=True)
+    audio = tr_mod.load_audio(path)
+    assert audio.dtype == np.float32
+    assert abs(audio.size / tr_mod.SAMPLE_RATE - 2.0) < 0.1
+    assert 0.05 < np.abs(audio).max() <= 1.0  # sinus lavfi : amplitude 1/8

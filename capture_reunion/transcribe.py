@@ -12,12 +12,16 @@ sans aucune analyse supplémentaire.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Callable, Optional
 
+import numpy as np
+
+from .ffmpeg_utils import NO_WINDOW, find_ffmpeg
 from .session import Session
 from .transcript import Segment
 
@@ -60,6 +64,25 @@ def session_tracks(session: Session) -> list[Track]:
     raise FileNotFoundError("Aucun son à transcrire dans cet enregistrement.")
 
 
+SAMPLE_RATE = 16000
+
+
+def load_audio(path: Path) -> np.ndarray:
+    """Décode le son en 16 kHz mono (float32) avec ffmpeg.
+
+    On ne laisse pas faster-whisper décoder lui-même : il passe par PyAV, dont
+    certaines versions refusent ses options (« unexpected keyword argument
+    'metadata_errors' »).
+    """
+    cmd = [find_ffmpeg(), "-hide_banner", "-loglevel", "error", "-nostdin",
+           "-i", str(path), "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "s16le", "-"]
+    proc = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW)
+    if proc.returncode != 0:
+        err = proc.stderr.decode(errors="replace").strip().splitlines()[-3:]
+        raise RuntimeError(f"Lecture du son impossible ({Path(path).name}) :\n" + "\n".join(err))
+    return np.frombuffer(proc.stdout, np.int16).astype(np.float32) / 32768.0
+
+
 def load_model(model: str = DEFAULT_MODEL):
     try:
         from faster_whisper import WhisperModel
@@ -90,8 +113,12 @@ def transcribe_tracks(
     whisper = whisper or load_model(model)
     per_track: list[list[Segment]] = []
     for i, track in enumerate(tracks):
+        audio = load_audio(track.path)
+        if audio.size == 0:
+            per_track.append([])
+            continue
         segments, info = whisper.transcribe(
-            str(track.path),
+            audio,
             language=language or None,
             vad_filter=True,  # saute les silences : plus rapide, moins d'inventions
             initial_prompt=vocabulary or None,
@@ -99,7 +126,7 @@ def transcribe_tracks(
             condition_on_previous_text=False,
         )
         found: list[Segment] = []
-        duration = getattr(info, "duration", 0) or 0
+        duration = audio.size / SAMPLE_RATE
         for seg in segments:
             text = seg.text.strip()
             if text:
