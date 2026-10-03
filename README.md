@@ -6,7 +6,11 @@ Logiciel Windows qui :
 2. **enregistre le son de l'ordinateur** (le son de la réunion, propre, sans micro) ;
 3. **photographie automatiquement chaque diapo** du diaporama qui défile ;
 4. **crée un PowerPoint « maison »** à partir de ces photos, avec votre modèle (.potx : logo, bandeau CHU…) ;
-5. **transcrit la réunion sur votre PC**, sans Plaud, sans abonnement et sans rien envoyer sur Internet. Le logiciel sait qui parle : « Moi » (votre micro) ou « Participants » (le son de l'ordinateur) ;
+5. **transcrit la réunion sur votre PC**, sans Plaud, sans abonnement et sans rien envoyer sur Internet :
+   - le logiciel sait qui parle : « Moi » (votre micro) ou « Participants » (le son de l'ordinateur) ;
+   - la langue est détectée automatiquement ;
+   - le texte est rendu en paragraphes et se termine par un **résumé** (phrases clés et mots-clés) ;
+   - sur option, une **version traduite** anglais ↔ français est produite ;
 6. **ou se couple au Plaud** : chaque phrase de la transcription est rattachée à la diapo affichée à ce moment-là (dans les notes du PowerPoint et dans un compte-rendu Word « diapo + ce qui a été dit »).
 
 ## Installation (une seule fois)
@@ -59,14 +63,22 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
 - **Extraire les diapos de la vidéo** : refait la détection, par exemple avec une autre zone, ou sur une vidéo enregistrée ailleurs (bouton « Ouvrir une autre vidéo… »).
 - **Transcrire** (transcription sur ce PC) :
   - **Qualité** : *Rapide* (small) suffit souvent. *Précis* (medium) ou *Très précis* (large-v3-turbo) reconnaissent mieux le vocabulaire médical, mais sont plus lents. Pour 1 h de réunion, comptez de l'ordre de 10 à 20 min en Rapide sur un portable récent, nettement plus en Précis.
+  - **Langue parlée** : laissez « Détection automatique ». Imposer « Français » sur une conférence en anglais ferait *traduire* la reconnaissance vocale, et mal.
+  - **Version traduite** : conférence en anglais → version française, conférence en français → version anglaise. La traduction tourne aussi sur le PC (modèles libres Argos/OPUS-MT, environ 100 Mo, téléchargés une fois). C'est une traduction automatique : elle est fidèle sur le fond, mais pas toujours élégante.
   - **Vocabulaire** : mots difficiles (noms propres, molécules, sigles) pour aider la reconnaissance.
   - Le modèle est téléchargé **une seule fois** (0,5 à 1,6 Go, dans `%LOCALAPPDATA%\CaptureReunion\modeles`). Ensuite, tout fonctionne hors ligne.
-  - Résultat : `transcription.txt` (lisible) et `transcription.srt`, utilisés automatiquement pour le PowerPoint et le compte-rendu.
+  - Résultat :
+    - `transcription.txt` : paragraphes et résumé ;
+    - `transcription.srt` : horodatage fin, pour rattacher le texte aux diapos ;
+    - si la traduction est demandée, `transcription_fr.txt` (ou `_en`).
+
+    Ces fichiers sont utilisés automatiquement pour le PowerPoint et le compte-rendu.
+  - **Le résumé est calculé sans IA** (méthode TextRank) : il retient les phrases réellement prononcées qui représentent le mieux l'ensemble. Il ne les reformule pas.
 - **Modèle PowerPoint** : votre .potx ou .pptx. Chaque photo est centrée sur la diapo. Si votre modèle comporte une disposition avec un espace réservé « Image », la photo est placée dans ce cadre.
 - **Transcription** : celle du logiciel est remplie automatiquement. Vous pouvez aussi choisir un export Plaud : exportez la transcription depuis l'appli Plaud **avec les horodatages** (TXT, SRT ou DOCX).
 - **Heure de début du Plaud** (export Plaud uniquement) : l'heure à laquelle vous avez lancé l'enregistrement Plaud (visible dans l'appli). Le logiciel connaît l'heure de début de la vidéo et calcule le décalage. « Ajustement fin » permet de corriger de quelques secondes.
 - **Créer le PowerPoint** : une diapo par photo. Les notes du présentateur contiennent l'heure d'affichage et, si une transcription est fournie, ce qui a été dit.
-- **Créer le compte-rendu Word** : chaque diapo suivie de la transcription correspondante.
+- **Créer le compte-rendu Word** : chaque diapo suivie de la transcription correspondante, puis le résumé. Si une traduction existe, `compte-rendu_fr.docx` (ou `_en`) est créé en plus.
 
 ## Comment la détection des diapos fonctionne
 
@@ -84,7 +96,7 @@ Une image est analysée chaque seconde :
 .venv\Scripts\python -m capture_reunion enregistrer Zoom --zone 0,0,0.8,1
 .venv\Scripts\python -m capture_reunion enregistrer ecran1
 .venv\Scripts\python -m capture_reunion extraire "chemin\video.mp4"
-.venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --vocabulaire "RCP, pembrolizumab"
+.venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --traduire --vocabulaire "RCP, pembrolizumab"
 .venv\Scripts\python -m capture_reunion pptx "dossier de session" --modele modele.potx --transcription plaud.txt --debut-plaud 14:29:50
 .venv\Scripts\python -m capture_reunion compte-rendu "dossier de session" --transcription plaud.txt --debut-plaud 14:29:50
 ```
@@ -95,5 +107,5 @@ Prévenez les participants avant d'enregistrer (RGPD). En RCP, les données de s
 
 ## Pour les développeurs
 
-- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (lecture des transcriptions), `transcribe.py` (transcription locale faster-whisper), `gui.py` (PySide6).
+- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (lecture des transcriptions), `transcribe.py` (transcription locale faster-whisper), `summarize.py` (résumé TextRank), `translate.py` (traduction hors ligne CTranslate2 + modèles Argos), `gui.py` (PySide6).
 - Tests : `python -m pytest`. Ils tournent aussi hors Windows : la capture est simulée par une fausse fenêtre.

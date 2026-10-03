@@ -35,6 +35,12 @@ class Session:
     """Pistes séparées pour la transcription : {"participants": ..., "moi": ...}."""
     transcript: Optional[str] = None
     """Transcription faite par le logiciel (horodatée sur la vidéo)."""
+    language: Optional[str] = None
+    """Langue détectée de la transcription (« fr », « en »…)."""
+    summary: dict = field(default_factory=dict)
+    """Résumé : {"sentences": [...], "keywords": [...]}."""
+    translations: dict = field(default_factory=dict)
+    """Versions traduites : {"fr": {"transcript": "transcription_fr.srt", "summary": {...}}}."""
     duration: float = 0.0
     zone: Optional[Zone] = None
     slides: list[SlideRecord] = field(default_factory=list)
@@ -83,6 +89,9 @@ class Session:
         session.audio = data.get("audio")
         session.tracks = dict(data.get("tracks") or {})
         session.transcript = data.get("transcript")
+        session.language = data.get("language")
+        session.summary = dict(data.get("summary") or {})
+        session.translations = dict(data.get("translations") or {})
         session.duration = float(data.get("duration") or 0.0)
         zone = data.get("zone")
         session.zone = tuple(zone) if zone else None

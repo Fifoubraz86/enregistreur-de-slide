@@ -61,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     tr.add_argument("session", type=Path, help="dossier de session ou fichier vidéo")
     tr.add_argument("--modele", default="small",
                     help="small (rapide), medium (précis) ou large-v3-turbo (très précis)")
+    tr.add_argument("--langue", choices=["auto", "fr", "en"], default="auto",
+                    help="langue parlée (défaut : détection automatique)")
+    tr.add_argument("--traduire", action="store_true",
+                    help="crée aussi une version traduite (anglais ↔ français)")
     tr.add_argument("--vocabulaire", default="",
                     help="mots difficiles à reconnaître (noms, termes médicaux), séparés par des virgules")
 
@@ -126,11 +130,13 @@ def main(argv: list[str] | None = None) -> int:
                 last[0] = pct
                 print(f"\rTranscription : {pct:3d} %", end="", flush=True)
 
-        out = transcribe_session(session, args.modele, args.vocabulaire, progress)
+        out = transcribe_session(session, args.modele, args.vocabulaire, progress,
+                                 language=None if args.langue == "auto" else args.langue,
+                                 translate=args.traduire)
         print(f"\nCréé : {out}")
         return 0
 
-    from .workflow import compute_offset, make_pptx, make_report
+    from .workflow import compute_offset, make_pptx, make_reports
 
     session = _load_session(args.session)
     plaud = _clock(session, args.debut_plaud) if args.debut_plaud else None
@@ -138,7 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "pptx":
         out = make_pptx(session, args.modele, args.transcription, offset)
     else:
-        out = make_report(session, args.transcription, offset)
+        for out in make_reports(session, args.transcription, offset):
+            print(f"Créé : {out}")
+        return 0
     print(f"Créé : {out}")
     return 0
 

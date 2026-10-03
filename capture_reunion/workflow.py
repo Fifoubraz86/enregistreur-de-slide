@@ -14,6 +14,7 @@ from .transcript import (
     SlideSection,
     assign_segments,
     load_transcript,
+    merge_segments,
     notes_by_slide,
     offset_from_clock,
 )
@@ -70,7 +71,10 @@ def resolve_transcript(
 
 def sections_for(session: Session, transcript: Path, offset: float) -> list[SlideSection]:
     segments = load_transcript(transcript)
-    return assign_segments(session.timeline, segments, offset, session.duration or None)
+    sections = assign_segments(session.timeline, segments, offset, session.duration or None)
+    for section in sections:
+        section.segments = merge_segments(section.segments)
+    return sections
 
 
 def make_pptx(
@@ -94,29 +98,58 @@ def make_pptx(
     return build_pptx(images, output, template=template, notes=notes)
 
 
+def _summary_for(session: Session, transcript: Path, sections: list[SlideSection], language: str):
+    """Résumé enregistré à la transcription, sinon calculé sur le texte (export Plaud…)."""
+    own = session.folder / session.transcript if session.transcript else None
+    if own and own.exists() and Path(transcript).resolve() == own.resolve() and session.summary:
+        return session.summary.get("sentences", []), session.summary.get("keywords", [])
+    for lang, info in session.translations.items():
+        if Path(transcript).resolve() == (session.folder / info["transcript"]).resolve():
+            summary = info.get("summary", {})
+            return summary.get("sentences", []), summary.get("keywords", [])
+    from .summarize import summarize
+
+    computed = summarize([seg.text for sec in sections for seg in sec.segments], language)
+    return computed.sentences, computed.keywords
+
+
 def make_report(
     session: Session,
     transcript: Optional[Path] = None,
     offset: float = 0.0,
     output: Optional[Path] = None,
+    language: Optional[str] = None,
 ) -> Path:
     transcript, offset = resolve_transcript(session, transcript, offset)
     if transcript is None:
         raise ValueError("Aucune transcription : lancez « Transcrire » ou choisissez un export Plaud.")
+    language = language or session.language or "fr"
     sections = sections_for(session, transcript, offset)
     images = {s.index: session.folder / s.file for s in session.slides}
     start = session.start_datetime
-    subtitle = " · ".join(
-        part
-        for part in (
-            session.window_title,
-            f"{start:%d/%m/%Y à %Hh%M}" if start else "",
-            f"{len(session.slides)} diapos",
-        )
-        if part
-    )
+    count = f"{len(session.slides)} {'slides' if language == 'en' else 'diapos'}"
+    date = (f"{start:%d/%m/%Y, %H:%M}" if language == "en" else f"{start:%d/%m/%Y à %Hh%M}") if start else ""
+    subtitle = " · ".join(part for part in (session.window_title, date, count) if part)
+    sentences, keywords = _summary_for(session, transcript, sections, language)
     output = output or session.folder / "compte-rendu.docx"
-    return build_report(sections, images, output, subtitle=subtitle, offset=offset)
+    return build_report(sections, images, output, subtitle=subtitle, offset=offset,
+                        summary_sentences=sentences, keywords=keywords, language=language)
+
+
+def make_reports(
+    session: Session, transcript: Optional[Path] = None, offset: float = 0.0
+) -> list[Path]:
+    """Compte-rendu, plus une version par traduction faite à la transcription."""
+    paths = [make_report(session, transcript, offset)]
+    own = session.folder / session.transcript if session.transcript else None
+    using_own = transcript is None or (own is not None and Path(transcript).resolve() == own.resolve())
+    if using_own:
+        for lang, info in session.translations.items():
+            path = session.folder / info["transcript"]
+            if path.exists():
+                paths.append(make_report(session, path, 0.0, session.folder / f"compte-rendu_{lang}.docx",
+                                         language=lang))
+    return paths
 
 
 def _fmt(t: float) -> str:

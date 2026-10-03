@@ -4,6 +4,10 @@ Le modèle de reconnaissance vocale (Whisper, libre) tourne sur le processeur :
 aucun envoi de données, aucun abonnement. Il est téléchargé une seule fois
 (dossier ``modeles``), ensuite tout fonctionne hors connexion.
 
+La langue est détectée automatiquement (une conférence en anglais reste en
+anglais). Le texte est regroupé en paragraphes, suivi d'un résumé (phrases clés,
+sans IA) et, sur demande, d'une version traduite anglais ↔ français.
+
 Quand l'enregistrement a deux pistes (son de l'ordinateur et micro), chacune
 est transcrite séparément : on sait donc qui parle (« Participants » / « Moi »)
 sans aucune analyse supplémentaire.
@@ -14,6 +18,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -23,7 +28,8 @@ import numpy as np
 
 from .ffmpeg_utils import NO_WINDOW, find_ffmpeg
 from .session import Session
-from .transcript import Segment
+from .summarize import Summary, summarize
+from .transcript import MIN_INTRO, Segment, merge_segments
 
 # Libellé affiché → modèle faster-whisper. Les durées sont des ordres de grandeur
 # pour un portable récent sans carte graphique dédiée.
@@ -103,15 +109,20 @@ def load_model(model: str = DEFAULT_MODEL):
 def transcribe_tracks(
     tracks: list[Track],
     model: str = DEFAULT_MODEL,
-    language: str = "fr",
+    language: Optional[str] = None,
     vocabulary: str = "",
     progress: Optional[Callable[[float], None]] = None,
     cancelled: Optional[Callable[[], bool]] = None,
     whisper=None,
-) -> list[Segment]:
-    """Transcrit chaque piste ; renvoie les passages triés par heure."""
+) -> tuple[list[Segment], str]:
+    """Transcrit chaque piste ; renvoie les passages triés par heure et la langue.
+
+    ``language=None`` : détection automatique sur le début de chaque piste.
+    Imposer une langue qui n'est pas celle parlée fait *traduire* Whisper, et mal.
+    """
     whisper = whisper or load_model(model)
     per_track: list[list[Segment]] = []
+    spoken: Counter = Counter()  # secondes de parole par langue
     for i, track in enumerate(tracks):
         audio = load_audio(track.path)
         if audio.size == 0:
@@ -127,6 +138,7 @@ def transcribe_tracks(
         )
         found: list[Segment] = []
         duration = audio.size / SAMPLE_RATE
+        track_language = language or getattr(info, "language", None) or "fr"
         for seg in segments:
             text = seg.text.strip()
             if text:
@@ -136,6 +148,7 @@ def transcribe_tracks(
             if cancelled and cancelled():
                 raise RuntimeError("Transcription annulée.")
         per_track.append(found)
+        spoken[track_language] += sum((s.end or s.start) - s.start for s in found)
         if progress:
             progress((i + 1) / len(tracks))
 
@@ -145,7 +158,8 @@ def transcribe_tracks(
         per_track[mine] = remove_echo(per_track[mine], per_track[others])
     merged = [s for segs in per_track for s in segs]
     merged.sort(key=lambda s: s.start)
-    return merged
+    detected = language or (spoken.most_common(1)[0][0] if spoken else "fr")
+    return merged, detected
 
 
 def remove_echo(mine: list[Segment], others: list[Segment]) -> list[Segment]:
@@ -186,10 +200,29 @@ def write_srt(segments: list[Segment], path: Path) -> Path:
     return Path(path)
 
 
-def write_text(segments: list[Segment], path: Path) -> Path:
-    """Version lisible : « [00:01:23] Moi : … »."""
-    Path(path).write_text("\n".join(s.line() for s in segments) + "\n", encoding="utf-8")
+SUMMARY_TITLES = {
+    "fr": ("RÉSUMÉ (phrases clés extraites automatiquement)", "Mots-clés"),
+    "en": ("SUMMARY (key sentences, automatically extracted)", "Keywords"),
+}
+SPEAKER_TRANSLATIONS = {"en": {"Moi": "Me"}}
+
+
+def write_text(
+    segments: list[Segment], path: Path, summary: Optional[Summary] = None, language: str = "fr"
+) -> Path:
+    """Version lisible : un paragraphe par prise de parole, puis le résumé."""
+    parts = [s.line() for s in segments]
+    if summary and summary.sentences:
+        title, kw_title = SUMMARY_TITLES.get(language, SUMMARY_TITLES["fr"])
+        parts += ["", title, ""] + [f"• {s}" for s in summary.sentences]
+        if summary.keywords:
+            parts += ["", f"{kw_title} : {', '.join(summary.keywords)}"]
+    Path(path).write_text("\n\n".join(parts).replace("\n\n\n\n", "\n\n") + "\n", encoding="utf-8")
     return Path(path)
+
+
+def _stage(progress, start: float, end: float):
+    return (lambda p: progress(start + (end - start) * p)) if progress else None
 
 
 def transcribe_session(
@@ -199,12 +232,46 @@ def transcribe_session(
     progress: Optional[Callable[[float], None]] = None,
     cancelled: Optional[Callable[[], bool]] = None,
     whisper=None,
+    language: Optional[str] = None,
+    translate: bool = False,
+    translator=None,
 ) -> Path:
-    """Transcrit l'enregistrement ; écrit transcription.srt et transcription.txt."""
-    segments = transcribe_tracks(session_tracks(session), model, "fr", vocabulary,
-                                 progress, cancelled, whisper)
+    """Transcrit l'enregistrement.
+
+    Écrit transcription.srt (horodatage fin, pour les diapos) et transcription.txt
+    (paragraphes + résumé) ; avec ``translate``, aussi transcription_<langue>.srt/.txt.
+    """
+    split = 0.85 if translate else 1.0
+    segments, lang = transcribe_tracks(session_tracks(session), model, language, vocabulary,
+                                       _stage(progress, 0, split), cancelled, whisper)
     srt = write_srt(segments, session.folder / TRANSCRIPT_FILE)
-    write_text(segments, session.folder / "transcription.txt")
+    paragraphs = merge_segments(segments, [t for t, _ in session.timeline if t > MIN_INTRO])
+    summary = summarize([p.text for p in paragraphs], lang)
+    write_text(paragraphs, session.folder / "transcription.txt", summary, lang)
     session.transcript = TRANSCRIPT_FILE
+    session.language = lang
+    session.summary = {"sentences": summary.sentences, "keywords": summary.keywords}
+    session.translations = {}
+
+    if translate:
+        from .translate import Translator, target_language
+
+        target = target_language(lang)
+        tr = translator or Translator(lang, target)
+        texts = tr.translate([p.text for p in paragraphs], _stage(progress, split, 1.0))
+        names = SPEAKER_TRANSLATIONS.get(target, {})
+        translated = [Segment(p.start, t, names.get(p.speaker, p.speaker), p.end)
+                      for p, t in zip(paragraphs, texts)]
+        t_summary = Summary(tr.translate_sentences(summary.sentences),
+                            tr.translate_sentences(summary.keywords))
+        t_srt = f"transcription_{target}.srt"
+        write_srt(translated, session.folder / t_srt)
+        write_text(translated, session.folder / f"transcription_{target}.txt", t_summary, target)
+        session.translations[target] = {
+            "transcript": t_srt,
+            "summary": {"sentences": t_summary.sentences, "keywords": t_summary.keywords},
+        }
     session.save()
+    if progress:
+        progress(1.0)
     return srt

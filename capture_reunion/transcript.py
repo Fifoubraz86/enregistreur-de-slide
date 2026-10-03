@@ -147,6 +147,51 @@ class SlideSection:
     segments: list[Segment] = field(default_factory=list)
 
 
+MIN_INTRO = 5.0
+_SENTENCE_END = re.compile(r"[.!?…»\")]\s*$")
+
+
+def merge_segments(
+    segments: list[Segment],
+    boundaries: tuple[float, ...] | list[float] = (),
+    max_gap: float = 1.5,
+    max_duration: float = 60.0,
+    hard_max_duration: float = 120.0,
+) -> list[Segment]:
+    """Regroupe en paragraphes les morceaux de quelques secondes produits par la
+    reconnaissance vocale.
+
+    On continue le paragraphe tant que c'est la même personne et que la pause
+    est courte. Au-delà de ``max_duration``, on coupe à la fin d'une phrase,
+    sans jamais franchir un changement de diapo (``boundaries``).
+    """
+    cuts = sorted(boundaries)
+    merged: list[Segment] = []
+    piece_start = 0.0  # début du dernier morceau ajouté
+    for seg in sorted(segments, key=lambda s: s.start):
+        last = merged[-1] if merged else None
+        if last is not None:
+            # Sans heure de fin (export texte), on suppose la parole continue
+            # tant que les morceaux se suivent de près.
+            last_end = last.end if last.end is not None else min(seg.start, piece_start + 15)
+            long = seg.start - last.start >= max_duration
+            crosses = any(last.start < c <= seg.start for c in cuts)
+            if (
+                seg.speaker == last.speaker
+                and seg.start - last_end <= max_gap
+                and not crosses
+                and seg.start - last.start < hard_max_duration
+                and not (long and _SENTENCE_END.search(last.text))
+            ):
+                last.text = f"{last.text} {seg.text}".strip()
+                last.end = seg.end if seg.end is not None else last.end
+                piece_start = seg.start
+                continue
+        merged.append(Segment(seg.start, seg.text, seg.speaker, seg.end))
+        piece_start = seg.start
+    return merged
+
+
 def assign_segments(
     timeline: list[tuple[float, int]],
     segments: list[Segment],
@@ -155,6 +200,10 @@ def assign_segments(
 ) -> list[SlideSection]:
     """Répartit les passages de la transcription entre les diapos, dans l'ordre chronologique."""
     events = sorted(timeline)
+    if events and events[0][0] <= MIN_INTRO:
+        # La 1ʳᵉ diapo met quelques secondes à être reconnue (stabilité) :
+        # pas de section « avant la première diapo » pour si peu.
+        events[0] = (0.0, events[0][1])
     sections: list[SlideSection] = []
     if not events or events[0][0] > 0:
         sections.append(SlideSection(None, 0.0, events[0][0] if events else duration))

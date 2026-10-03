@@ -115,20 +115,47 @@ def build_pptx(
     return output
 
 
+REPORT_LABELS = {
+    "fr": {
+        "title": "Compte-rendu de réunion",
+        "before": "Avant la première diapo",
+        "slide": "Diapo",
+        "empty": "(rien de transcrit pendant cette diapo)",
+        "summary": "Résumé",
+        "summary_note": "Phrases clés extraites automatiquement de la transcription (sans reformulation).",
+        "keywords": "Mots-clés",
+    },
+    "en": {
+        "title": "Meeting report",
+        "before": "Before the first slide",
+        "slide": "Slide",
+        "empty": "(nothing transcribed during this slide)",
+        "summary": "Summary",
+        "summary_note": "Key sentences automatically extracted from the transcript (not rephrased).",
+        "keywords": "Keywords",
+    },
+}
+
+
 def build_report(
     sections: list[SlideSection],
     slide_images: dict[int, Path],
     output: Path,
-    title: str = "Compte-rendu de réunion",
+    title: Optional[str] = None,
     subtitle: str = "",
     offset: float = 0.0,
+    summary_sentences: Optional[list[str]] = None,
+    keywords: Optional[list[str]] = None,
+    language: str = "fr",
 ) -> Path:
-    """Document Word : chaque diapo suivie de ce qui a été dit pendant qu'elle était affichée."""
+    """Document Word : chaque diapo suivie de ce qui a été dit pendant qu'elle était
+    affichée, puis le résumé."""
     import docx
     from docx.shared import Cm, RGBColor
 
+    labels = REPORT_LABELS.get(language, REPORT_LABELS["fr"])
     doc = docx.Document()
-    doc.add_heading(title, level=0)
+    doc.add_heading(title or labels["title"], level=0)
     if subtitle:
         doc.add_paragraph(subtitle)
 
@@ -136,14 +163,14 @@ def build_report(
         end = f" → {format_timestamp(section.end)}" if section.end is not None else ""
         span = f"{format_timestamp(section.start)}{end}"
         if section.slide_index is None:
-            doc.add_heading(f"Avant la première diapo ({span})", level=2)
+            doc.add_heading(f"{labels['before']} ({span})", level=2)
         else:
-            doc.add_heading(f"Diapo {section.slide_index} ({span})", level=2)
+            doc.add_heading(f"{labels['slide']} {section.slide_index} ({span})", level=2)
             image = slide_images.get(section.slide_index)
             if image and Path(image).exists():
                 doc.add_picture(str(image), width=Cm(16))
         if not section.segments:
-            p = doc.add_paragraph("(rien de transcrit pendant cette diapo)")
+            p = doc.add_paragraph(labels["empty"])
             p.runs[0].italic = True
         for seg in section.segments:
             p = doc.add_paragraph()
@@ -153,6 +180,17 @@ def build_report(
             if seg.speaker:
                 p.add_run(f"{seg.speaker} : ").bold = True
             p.add_run(seg.text)
+
+    if summary_sentences:
+        doc.add_heading(labels["summary"], level=1)
+        note = doc.add_paragraph(labels["summary_note"])
+        note.runs[0].italic = True
+        for sentence in summary_sentences:
+            doc.add_paragraph(sentence, style="List Bullet")
+        if keywords:
+            p = doc.add_paragraph()
+            p.add_run(f"{labels['keywords']} : ").bold = True
+            p.add_run(", ".join(keywords))
 
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)

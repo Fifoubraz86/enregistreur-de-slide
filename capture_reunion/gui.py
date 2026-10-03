@@ -526,16 +526,24 @@ class MainWindow(QMainWindow):
         saved = self.settings.value("model", DEFAULT_MODEL)
         self.model_combo.setCurrentIndex(max(0, self.model_combo.findData(saved)))
         tl.addRow("Qualité", self.model_combo)
+        self.lang_combo = QComboBox()
+        for label, code in (("Détection automatique (recommandé)", ""), ("Français", "fr"), ("Anglais", "en")):
+            self.lang_combo.addItem(label, code)
+        self.lang_combo.setCurrentIndex(max(0, self.lang_combo.findData(self.settings.value("language", ""))))
+        tl.addRow("Langue parlée", self.lang_combo)
+        self.translate_check = QCheckBox(
+            "Créer aussi une version traduite (anglais → français, ou français → anglais)")
+        self.translate_check.setChecked(self.settings.value("translate", True, type=bool))
+        tl.addRow(self.translate_check)
         self.vocab_edit = QLineEdit(self.settings.value("vocabulary", ""))
         self.vocab_edit.setPlaceholderText("Optionnel : noms et termes difficiles (ex. RCP, pembrolizumab, Dr Le Gall)")
         tl.addRow("Vocabulaire", self.vocab_edit)
         self.transcribe_btn = QPushButton("Transcrire")
         self.transcribe_btn.clicked.connect(self._transcribe)
         tr_hint = QLabel(
-            "Le modèle est téléchargé une seule fois (connexion nécessaire la 1ʳᵉ fois), "
-            "ensuite tout se fait hors ligne. Avec le micro enregistré, on sait qui parle "
-            "(« Moi » / « Participants »). Durée indicative pour 1 h : 10 à 20 min en Rapide, "
-            "nettement plus en Précis."
+            "Modèles téléchargés une seule fois (connexion nécessaire la 1ʳᵉ fois), ensuite "
+            "tout se fait hors ligne. Le texte se termine par un résumé (phrases clés). "
+            "Durée indicative pour 1 h : 10 à 20 min en Rapide, nettement plus en Précis."
         )
         tr_hint.setWordWrap(True)
         tr_hint.setStyleSheet("color: gray;")
@@ -721,9 +729,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Compte-rendu",
                                     "Lancez d'abord « Transcrire », ou choisissez un export Plaud.")
             return
-        from .workflow import make_report
+        from .workflow import make_reports
 
-        task = Task(make_report, self.session, transcript, self._offset())
+        task = Task(make_reports, self.session, transcript, self._offset())
         task.done.connect(lambda p: self._created(p, self.report_btn), Q)
         task.failed.connect(self._task_failed, Q)
         self.report_btn.setEnabled(False)
@@ -736,15 +744,20 @@ class MainWindow(QMainWindow):
 
         model = self.model_combo.currentData()
         vocabulary = self.vocab_edit.text().strip()
+        language = self.lang_combo.currentData() or None
+        translate = self.translate_check.isChecked()
         self.settings.setValue("model", model)
         self.settings.setValue("vocabulary", vocabulary)
+        self.settings.setValue("language", language or "")
+        self.settings.setValue("translate", translate)
         self.progress.setValue(0)
         self.progress.setVisible(True)
         self.transcribe_btn.setEnabled(False)
         self.transcribe_btn.setText("Transcription…")
         session = self.session
         task = Task(lambda: transcribe_session(session, model, vocabulary,
-                                               progress=task.progress.emit))
+                                               progress=task.progress.emit,
+                                               language=language, translate=translate))
         task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
         task.done.connect(self._transcribed, Q)
         task.failed.connect(self._task_failed, Q)
@@ -760,11 +773,15 @@ class MainWindow(QMainWindow):
         ) == QMessageBox.StandardButton.Yes:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.with_suffix(".txt"))))
 
-    def _created(self, path: Path, button: QPushButton) -> None:
+    def _created(self, paths, button: QPushButton) -> None:
         button.setEnabled(True)
-        if QMessageBox.question(self, "Créé", f"Fichier créé :\n{path}\n\nL'ouvrir ?") \
+        paths = paths if isinstance(paths, list) else [paths]
+        names = "\n".join(str(p) for p in paths)
+        label = "Fichier créé" if len(paths) == 1 else "Fichiers créés"
+        if QMessageBox.question(self, "Créé", f"{label} :\n{names}\n\nOuvrir ?") \
                 == QMessageBox.StandardButton.Yes:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+            for path in paths:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _task_failed(self, message: str) -> None:
         self.progress.setVisible(False)
