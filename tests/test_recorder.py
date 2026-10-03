@@ -17,7 +17,7 @@ from conftest import make_slide
 class FakeSource:
     """Affiche la diapo 1 puis la diapo 2 après 2,5 s."""
 
-    def __init__(self, hwnd, on_closed=None):
+    def __init__(self, hwnd, on_closed=None, monitor_index=None):
         self.closed = False
         self._t0 = None
 
@@ -90,3 +90,18 @@ def test_mux_with_audio_delay(tmp_path):
     ffmpeg_utils.mux(video, wav, out, audio_delay=1.0)
     ffmpeg_utils.to_mp3(wav, tmp_path / "son.mp3", delay=1.0)
     assert out.stat().st_size > 0 and (tmp_path / "son.mp3").stat().st_size > 0
+
+
+def test_monitor_target_is_passed_to_capture(tmp_path, monkeypatch):
+    seen = {}
+
+    class Spy(FakeSource):
+        def __init__(self, hwnd, on_closed=None, monitor_index=None):
+            super().__init__(hwnd, on_closed)
+            seen.update(hwnd=hwnd, monitor_index=monitor_index)
+
+    monkeypatch.setattr(rec_mod, "_WindowSource", Spy)
+    r = rec_mod.Recorder(None, tmp_path, window_title="Écran 1", monitor_index=1,
+                         record_audio=False, detect_slides=False)
+    assert seen == {"hwnd": None, "monitor_index": 1}
+    assert r.session.window_title == "Écran 1"

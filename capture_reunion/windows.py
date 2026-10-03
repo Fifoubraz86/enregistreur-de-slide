@@ -1,4 +1,5 @@
-"""Liste des fenêtres Windows ouvertes (Zoom, Teams, Chrome…) via l'API Win32."""
+"""Liste des fenêtres (Zoom, Teams, Chrome, PowerPoint…) et des écrans capturables,
+via l'API Win32."""
 
 from __future__ import annotations
 
@@ -18,7 +19,12 @@ PREFERRED = {
     "firefox.exe": "Firefox",
     "webex.exe": "Webex",
     "ciscocollabhost.exe": "Webex",
+    "powerpnt.exe": "PowerPoint",
 }
+
+# Applications de visio : quand c'est vous qui partagez votre écran, elles
+# n'affichent plus ce que vous partagez dans leur propre fenêtre.
+VISIO = {"zoom.exe", "ms-teams.exe", "teams.exe", "webex.exe", "ciscocollabhost.exe"}
 
 
 @dataclass
@@ -36,6 +42,28 @@ class WindowInfo:
     @property
     def preferred(self) -> bool:
         return self.process.lower() in PREFERRED
+
+    @property
+    def is_visio(self) -> bool:
+        return self.process.lower() in VISIO
+
+
+@dataclass
+class MonitorInfo:
+    index: int
+    """Numéro de l'écran à partir de 1, dans l'ordre de Windows (celui de windows-capture)."""
+    width: int
+    height: int
+    primary: bool
+
+    @property
+    def title(self) -> str:
+        return f"Écran {self.index}"
+
+    @property
+    def label(self) -> str:
+        primary = "principal, " if self.primary else ""
+        return f"[Écran entier] Écran {self.index} ({primary}{self.width}×{self.height})"
 
 
 if IS_WINDOWS:
@@ -121,6 +149,36 @@ if IS_WINDOWS:
         result.sort(key=lambda w: (not w.preferred, w.label.lower()))
         return result
 
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("rcMonitor", wintypes.RECT),
+            ("rcWork", wintypes.RECT),
+            ("dwFlags", wintypes.DWORD),
+        ]
+
+    MonitorEnumProc = ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT), wintypes.LPARAM
+    )
+    user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.c_void_p, MonitorEnumProc, wintypes.LPARAM]
+    user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
+    MONITORINFOF_PRIMARY = 1
+
+    def list_monitors() -> list[MonitorInfo]:
+        result: list[MonitorInfo] = []
+
+        def callback(hmonitor, _hdc, _rect, _lparam):
+            info = MONITORINFO()
+            info.cbSize = ctypes.sizeof(MONITORINFO)
+            user32.GetMonitorInfoW(hmonitor, ctypes.byref(info))
+            r = info.rcMonitor
+            result.append(MonitorInfo(len(result) + 1, r.right - r.left, r.bottom - r.top,
+                                      bool(info.dwFlags & MONITORINFOF_PRIMARY)))
+            return True
+
+        user32.EnumDisplayMonitors(None, None, MonitorEnumProc(callback), 0)
+        return result
+
     def window_exists(hwnd: int) -> bool:
         return bool(user32.IsWindow(hwnd))
 
@@ -133,6 +191,9 @@ if IS_WINDOWS:
 else:  # Permet d'importer le module (tests, CLI d'extraction) hors Windows.
 
     def list_windows() -> list[WindowInfo]:
+        return []
+
+    def list_monitors() -> list[MonitorInfo]:
         return []
 
     def window_exists(hwnd: int) -> bool:

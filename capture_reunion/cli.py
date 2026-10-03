@@ -39,10 +39,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="capture_reunion", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("fenetres", help="liste les fenêtres capturables (Windows)")
+    sub.add_parser("fenetres", help="liste les fenêtres et écrans capturables (Windows)")
 
     rec = sub.add_parser("enregistrer", help="enregistre une fenêtre (Windows)")
-    rec.add_argument("fenetre", help="partie du titre ou de l'application (ex. Zoom)")
+    rec.add_argument("fenetre", help="partie du titre ou de l'application (ex. Zoom), "
+                     "ou ecran1, ecran2… pour un écran entier")
     rec.add_argument("--dossier", type=Path, default=Path.home() / "Videos" / "Capture reunion")
     rec.add_argument("--ips", type=int, default=15, help="images par seconde (défaut 15)")
     rec.add_argument("--sans-son", action="store_true")
@@ -73,11 +74,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "fenetres":
-        from .windows import list_windows
+        from .windows import list_monitors, list_windows
 
         windows = list_windows()
         if not windows:
             print("Aucune fenêtre trouvée (cette commande ne fonctionne que sous Windows).")
+        for m in list_monitors():
+            print(f"{'ecran' + str(m.index):>10}  {m.label}")
         for w in windows:
             print(f"{w.hwnd:>10}  {w.process:<18} {w.title}")
         return 0
@@ -118,19 +121,33 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _record(args) -> int:
+    import re
+
     from .recorder import Recorder
-    from .windows import list_windows
+    from .windows import list_monitors, list_windows
 
     needle = args.fenetre.lower()
-    matches = [w for w in list_windows() if needle in w.title.lower() or needle in w.label.lower()]
-    if not matches:
-        print(f"Aucune fenêtre ne correspond à « {args.fenetre} ». Voir : capture_reunion fenetres")
-        return 1
-    target = matches[0]
+    screen = re.fullmatch(r"[ée]cran\s*(\d+)", needle)
+    if screen:
+        monitors = [m for m in list_monitors() if m.index == int(screen.group(1))]
+        if not monitors:
+            print(f"Pas d'écran n°{screen.group(1)}. Voir : capture_reunion fenetres")
+            return 1
+        target, hwnd, monitor_index = monitors[0], None, monitors[0].index
+    else:
+        matches = [w for w in list_windows() if needle in w.title.lower() or needle in w.label.lower()]
+        if not matches:
+            print(f"Aucune fenêtre ne correspond à « {args.fenetre} ». Voir : capture_reunion fenetres")
+            return 1
+        target, hwnd, monitor_index = matches[0], matches[0].hwnd, None
+        if target.is_visio:
+            print("Rappel : si c'est vous qui partagez votre écran, la fenêtre Zoom/Teams ne "
+                  "montre que votre vidéo. Utilisez alors ecran1 ou la fenêtre partagée.")
     recorder = Recorder(
-        target.hwnd,
+        hwnd,
         args.dossier,
         window_title=target.title,
+        monitor_index=monitor_index,
         fps=args.ips,
         record_audio=not args.sans_son,
         detect_slides=not args.sans_diapos,

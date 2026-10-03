@@ -25,14 +25,20 @@ class CaptureError(RuntimeError):
 
 
 class _WindowSource:
-    """Reçoit les images de la fenêtre et garde toujours la plus récente.
+    """Reçoit les images de la fenêtre (ou de l'écran entier) et garde la plus récente.
 
     Windows n'envoie une image que lorsque le contenu change : c'est
     l'enregistreur qui répète la dernière image pour obtenir une vidéo fluide.
     """
 
-    def __init__(self, hwnd: int, on_closed: Optional[Callable[[], None]] = None) -> None:
+    def __init__(
+        self,
+        hwnd: Optional[int],
+        on_closed: Optional[Callable[[], None]] = None,
+        monitor_index: Optional[int] = None,
+    ) -> None:
         self.hwnd = hwnd
+        self.monitor_index = monitor_index
         self.on_closed = on_closed
         self.closed = False
         self._lock = threading.Lock()
@@ -54,12 +60,17 @@ class _WindowSource:
                 "La capture ne fonctionne que sous Windows 10/11."
             ) from exc
 
+        target = (
+            {"monitor_index": self.monitor_index}
+            if self.monitor_index is not None
+            else {"window_hwnd": self.hwnd}
+        )
         last_error: Optional[Exception] = None
         # Sans curseur ni bordure jaune si Windows le permet, sinon réglages par défaut.
         for options in ({"cursor_capture": False, "draw_border": False}, {}):
             self._first.clear()
             try:
-                capture = WindowsCapture(window_hwnd=self.hwnd, **options)
+                capture = WindowsCapture(**target, **options)
                 capture.frame_handler = self._on_frame
                 capture.closed_handler = self._on_closed
                 self._control = capture.start_free_threaded()
@@ -69,6 +80,11 @@ class _WindowSource:
             if self._first.wait(FIRST_FRAME_TIMEOUT):
                 return
             self._stop_control()
+        if self.monitor_index is not None:
+            raise CaptureError(
+                f"Aucune image reçue de l'écran {self.monitor_index}."
+                + (f"\nDétail : {last_error}" if last_error else "")
+            )
         raise CaptureError(
             "Aucune image reçue de la fenêtre. Vérifiez qu'elle n'est pas réduite dans la "
             "barre des tâches (elle peut être cachée derrière d'autres fenêtres)."
@@ -102,9 +118,9 @@ class _WindowSource:
         self._stop_control()
 
 
-def grab_snapshot(hwnd: int) -> np.ndarray:
-    """Une image (BGR) de la fenêtre, par exemple pour choisir la zone des diapos."""
-    source = _WindowSource(hwnd)
+def grab_snapshot(hwnd: Optional[int], monitor_index: Optional[int] = None) -> np.ndarray:
+    """Une image (BGR) de la fenêtre ou de l'écran, par exemple pour choisir la zone des diapos."""
+    source = _WindowSource(hwnd, monitor_index=monitor_index)
     source.start()
     image = source.latest()
     source.stop()
@@ -114,7 +130,7 @@ def grab_snapshot(hwnd: int) -> np.ndarray:
 class Recorder:
     def __init__(
         self,
-        hwnd: int,
+        hwnd: Optional[int],
         base_dir: Path,
         window_title: str = "",
         fps: int = 15,
@@ -125,8 +141,11 @@ class Recorder:
         on_slide: Optional[Callable[[Slide], None]] = None,
         on_slide_updated: Optional[Callable[[Slide], None]] = None,
         on_window_closed: Optional[Callable[[], None]] = None,
+        monitor_index: Optional[int] = None,
     ) -> None:
+        """``hwnd`` : fenêtre à enregistrer, ou ``monitor_index`` (1, 2…) pour un écran entier."""
         self.hwnd = hwnd
+        self.monitor_index = monitor_index
         self.fps = max(1, int(fps))
         self.record_audio = record_audio
         self.max_height = max_height
@@ -149,7 +168,7 @@ class Recorder:
             else None
         )
         self.audio_warning = ""
-        self._source = _WindowSource(hwnd, on_closed=on_window_closed)
+        self._source = _WindowSource(hwnd, on_closed=on_window_closed, monitor_index=monitor_index)
         self._audio = None
         self._encoder = None
         self._log = None

@@ -42,7 +42,15 @@ from PySide6.QtWidgets import (
 from . import __version__
 from .session import Session
 from .slides import DetectorSettings, Zone, format_timestamp
-from .windows import IS_WINDOWS, is_minimized, list_windows, window_exists
+from .windows import (
+    IS_WINDOWS,
+    MonitorInfo,
+    WindowInfo,
+    is_minimized,
+    list_monitors,
+    list_windows,
+    window_exists,
+)
 
 Q = Qt.ConnectionType.QueuedConnection
 DEFAULT_DIR = Path.home() / "Videos" / "Capture reunion"
@@ -171,7 +179,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_after_tab(), "2. Diapos et compte-rendu")
         self.tabs = tabs
         self.setCentralWidget(tabs)
-        self.resize(720, 620)
+        self.resize(760, 700)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -182,7 +190,7 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        win_box = QGroupBox("Fenêtre à enregistrer")
+        win_box = QGroupBox("Fenêtre ou écran à enregistrer")
         wl = QVBoxLayout(win_box)
         row = QHBoxLayout()
         self.window_combo = QComboBox()
@@ -193,12 +201,23 @@ class MainWindow(QMainWindow):
         row.addWidget(refresh)
         wl.addLayout(row)
         hint = QLabel(
-            "La fenêtre peut être cachée derrière d'autres, mais pas réduite dans la barre "
-            "des tâches. Pour Chrome, détachez l'onglet de la réunion dans sa propre fenêtre."
+            "• Quelqu'un d'autre partage → la fenêtre Zoom / Teams.\n"
+            "• Vous partagez → « Écran entier » ou la fenêtre partagée (ex. Diaporama PowerPoint).\n"
+            "• Une fenêtre peut être cachée derrière d'autres, mais pas réduite.\n"
+            "• Chrome : détachez l'onglet de la réunion dans sa propre fenêtre."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: gray;")
         wl.addWidget(hint)
+        self.visio_warning = QLabel(
+            "⚠ Si c'est vous qui partagez votre écran, cette fenêtre Zoom/Teams ne montrera que "
+            "votre vidéo : choisissez plutôt « Écran entier » ou la fenêtre de votre présentation."
+        )
+        self.visio_warning.setWordWrap(True)
+        self.visio_warning.setStyleSheet("color: #d35400;")
+        self.visio_warning.setVisible(False)
+        wl.addWidget(self.visio_warning)
+        self.window_combo.currentIndexChanged.connect(self._on_target_changed)
         layout.addWidget(win_box)
 
         opt_box = QGroupBox("Options")
@@ -268,11 +287,15 @@ class MainWindow(QMainWindow):
 
     def refresh_windows(self) -> None:
         current = self.window_combo.currentData()
+        self.window_combo.blockSignals(True)
         self.window_combo.clear()
         windows = list_windows()
-        for w in windows:
-            self.window_combo.addItem(w.label, (w.hwnd, w.title))
-        if not windows:
+        # Applications de visio et PowerPoint, puis les écrans entiers, puis le reste.
+        targets = [w for w in windows if w.preferred] + list_monitors() \
+            + [w for w in windows if not w.preferred]
+        for target in targets:
+            self.window_combo.addItem(target.label, target)
+        if not targets:
             self.window_combo.addItem(
                 "Aucune fenêtre trouvée" if IS_WINDOWS else "Capture disponible sous Windows uniquement",
                 None,
@@ -281,21 +304,34 @@ class MainWindow(QMainWindow):
             for i in range(self.window_combo.count()):
                 if self.window_combo.itemData(i) == current:
                     self.window_combo.setCurrentIndex(i)
+        self.window_combo.blockSignals(False)
+        self._on_target_changed()
+
+    def _on_target_changed(self, *_args) -> None:
+        target = self.window_combo.currentData()
+        self.visio_warning.setVisible(isinstance(target, WindowInfo) and target.is_visio)
 
     def _choose_output_dir(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Dossier des enregistrements", self.dir_edit.text())
         if folder:
             self.dir_edit.setText(folder)
 
-    def _selected_window(self) -> Optional[tuple[int, str]]:
+    def _selected_window(self) -> Optional[WindowInfo | MonitorInfo]:
         data = self.window_combo.currentData()
         if not data:
             QMessageBox.warning(self, "Fenêtre", "Choisissez une fenêtre à enregistrer.")
             return None
-        if not window_exists(data[0]):
+        if isinstance(data, WindowInfo) and not window_exists(data.hwnd):
             QMessageBox.warning(self, "Fenêtre", "Cette fenêtre n'existe plus. Cliquez sur Actualiser.")
             return None
         return data
+
+    @staticmethod
+    def _capture_args(target: WindowInfo | MonitorInfo) -> tuple[Optional[int], Optional[int]]:
+        """(hwnd, numéro d'écran) attendus par l'enregistreur."""
+        if isinstance(target, MonitorInfo):
+            return None, target.index
+        return target.hwnd, None
 
     def _choose_record_zone(self) -> None:
         selected = self._selected_window()
@@ -305,7 +341,7 @@ class MainWindow(QMainWindow):
 
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            image = grab_snapshot(selected[0])
+            image = grab_snapshot(*self._capture_args(selected))
         except Exception as exc:
             QMessageBox.warning(self, "Capture", str(exc))
             return
@@ -329,7 +365,7 @@ class MainWindow(QMainWindow):
         selected = self._selected_window()
         if not selected:
             return
-        hwnd, title = selected
+        hwnd, monitor_index = self._capture_args(selected)
         from .recorder import Recorder
 
         self.settings.setValue("output_dir", self.dir_edit.text())
@@ -340,7 +376,8 @@ class MainWindow(QMainWindow):
         recorder = Recorder(
             hwnd,
             Path(self.dir_edit.text()),
-            window_title=title,
+            window_title=selected.title,
+            monitor_index=monitor_index,
             fps=self.fps_spin.value(),
             record_audio=self.audio_check.isChecked(),
             detect_slides=self.slides_check.isChecked(),
@@ -421,7 +458,7 @@ class MainWindow(QMainWindow):
         slides = f" — {r.slide_count} diapo(s)" if r.detector else ""
         self.status_label.setText(f"● Enregistrement en cours : {elapsed}{slides}")
         warnings = [r.audio_warning] if r.audio_warning else []
-        if is_minimized(r.hwnd):
+        if r.hwnd is not None and is_minimized(r.hwnd):
             warnings.append("⚠ La fenêtre est réduite : l'image est figée. Rouvrez-la "
                             "(elle peut rester derrière les autres fenêtres).")
         self.warning_label.setText("\n".join(warnings))

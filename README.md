@@ -24,7 +24,9 @@ ffmpeg est fourni automatiquement (paquet `imageio-ffmpeg`), vous n'avez rien à
 
 ### 1. Enregistrer
 
-- Choisissez la fenêtre dans la liste (Zoom, Teams et les navigateurs apparaissent en premier).
+- Choisissez quoi enregistrer dans la liste (Zoom, Teams, navigateurs et PowerPoint en premier, puis les écrans entiers) :
+  - **quelqu'un d'autre partage son écran** → la fenêtre Zoom / Teams ;
+  - **c'est vous qui partagez** → **« Écran entier »** ou la fenêtre que vous partagez (ex. « Diaporama PowerPoint »). Pendant votre partage, Zoom cache sa fenêtre de réunion et n'affiche plus qu'une vignette avec votre vidéo : l'enregistrer ne montrerait que votre visage.
 - Facultatif, mais conseillé : **« Définir la zone des diapos… »**, puis tracez un rectangle autour de la diapo, sans les vignettes des participants. Les visages qui bougent ne déclenchent alors plus de fausses détections.
 - Cliquez sur **Démarrer**. Vous pouvez passer à autre chose : la dernière diapo détectée s'affiche en miniature.
 
@@ -33,6 +35,7 @@ Deux règles à respecter :
 | Situation | Que faire |
 |---|---|
 | Fenêtre **réduite** dans la barre des tâches | Windows ne la dessine plus, donc l'image se fige. Laissez-la ouverte derrière les autres fenêtres, ou sur un 2ᵉ écran. Le logiciel affiche un avertissement si cela arrive. |
+| **Vous partagez votre écran dans Zoom/Teams** | Choisissez « Écran entier » ou la fenêtre partagée, pas la fenêtre Zoom. Avec « Écran entier », tout ce qui s'affiche sur cet écran est enregistré. |
 | **Onglet Chrome** | Seul l'onglet actif d'une fenêtre est dessiné. Détachez l'onglet de la réunion dans sa propre fenêtre (glissez l'onglet hors de la barre d'onglets). |
 
 À l'arrêt, un dossier est créé dans `Vidéos\Capture reunion\` :
@@ -70,6 +73,7 @@ Une image est analysée chaque seconde :
 ```
 .venv\Scripts\python -m capture_reunion fenetres
 .venv\Scripts\python -m capture_reunion enregistrer Zoom --zone 0,0,0.8,1
+.venv\Scripts\python -m capture_reunion enregistrer ecran1
 .venv\Scripts\python -m capture_reunion extraire "chemin\video.mp4"
 .venv\Scripts\python -m capture_reunion pptx "dossier de session" --modele modele.potx --transcription plaud.txt --debut-plaud 14:29:50
 .venv\Scripts\python -m capture_reunion compte-rendu "dossier de session" --transcription plaud.txt --debut-plaud 14:29:50
