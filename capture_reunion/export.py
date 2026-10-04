@@ -124,6 +124,9 @@ REPORT_LABELS = {
         "summary": "Résumé",
         "summary_note": "Phrases clés extraites automatiquement de la transcription (sans reformulation).",
         "keywords": "Mots-clés",
+        "brief": "En bref : ",
+        "ai_note": "Rédigé par l'IA locale ({model}) à partir de la transcription — à vérifier.",
+        "spoken": "Phrases clés réellement prononcées",
     },
     "en": {
         "title": "Meeting report",
@@ -133,6 +136,9 @@ REPORT_LABELS = {
         "summary": "Summary",
         "summary_note": "Key sentences automatically extracted from the transcript (not rephrased).",
         "keywords": "Keywords",
+        "brief": "In brief: ",
+        "ai_note": "Written by the local AI ({model}) from the transcript — to be checked.",
+        "spoken": "Key sentences actually spoken",
     },
 }
 
@@ -147,6 +153,9 @@ def build_report(
     summary_sentences: Optional[list[str]] = None,
     keywords: Optional[list[str]] = None,
     language: str = "fr",
+    ai_summary: str = "",
+    ai_model: str = "",
+    slide_summaries: Optional[dict] = None,
 ) -> Path:
     """Document Word : chaque diapo suivie de ce qui a été dit pendant qu'elle était
     affichée, puis le résumé."""
@@ -159,6 +168,7 @@ def build_report(
     if subtitle:
         doc.add_paragraph(subtitle)
 
+    briefed: set = set()
     for section in sections:
         end = f" → {format_timestamp(section.end)}" if section.end is not None else ""
         span = f"{format_timestamp(section.start)}{end}"
@@ -169,6 +179,12 @@ def build_report(
             image = slide_images.get(section.slide_index)
             if image and Path(image).exists():
                 doc.add_picture(str(image), width=Cm(16))
+            brief = (slide_summaries or {}).get(str(section.slide_index))
+            if brief and section.slide_index not in briefed:
+                briefed.add(section.slide_index)
+                p = doc.add_paragraph()
+                p.add_run(labels["brief"]).bold = True
+                p.add_run(brief).italic = True
         if not section.segments:
             p = doc.add_paragraph(labels["empty"])
             p.runs[0].italic = True
@@ -181,8 +197,13 @@ def build_report(
                 p.add_run(f"{seg.speaker} : ").bold = True
             p.add_run(seg.text)
 
-    if summary_sentences:
+    if ai_summary:
         doc.add_heading(labels["summary"], level=1)
+        note = doc.add_paragraph(labels["ai_note"].format(model=ai_model))
+        note.runs[0].italic = True
+        _add_markdown(doc, ai_summary)
+    if summary_sentences:
+        doc.add_heading(labels["spoken"] if ai_summary else labels["summary"], level=1 if not ai_summary else 2)
         note = doc.add_paragraph(labels["summary_note"])
         note.runs[0].italic = True
         for sentence in summary_sentences:
@@ -196,3 +217,23 @@ def build_report(
     output.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output))
     return output
+
+
+def _add_markdown(doc, text: str) -> None:
+    """Rend un texte simple : « ## titre », « - puce », **gras**, paragraphes."""
+    import re
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        heading = re.match(r"^#{1,6}\s*(.+)$", line)
+        bullet = re.match(r"^[-*•]\s+(.+)$", line)
+        if heading:
+            doc.add_heading(heading.group(1).strip("* "), level=2)
+            continue
+        p = doc.add_paragraph(style="List Bullet") if bullet else doc.add_paragraph()
+        content = bullet.group(1) if bullet else line
+        for k, chunk in enumerate(re.split(r"\*\*(.+?)\*\*", content)):
+            if chunk:
+                p.add_run(chunk).bold = k % 2 == 1

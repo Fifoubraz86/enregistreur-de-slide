@@ -89,6 +89,12 @@ def make_pptx(
     notes = None
     if transcript:
         notes = notes_by_slide(sections_for(session, transcript, offset), offset)
+        lang = _transcript_language(session, transcript)
+        briefs = session.ai.get("slide_summaries", {}).get(lang, {}) if lang else {}
+        for index, brief in briefs.items():
+            label = "In brief: " if lang == "en" else "En bref : "
+            key = int(index)
+            notes[key] = f"{label}{brief}\n\n{notes.get(key, '')}".strip()
     else:
         notes = {}
         for t, index in session.timeline:
@@ -98,19 +104,32 @@ def make_pptx(
     return build_pptx(images, output, template=template, notes=notes)
 
 
-def _summary_for(session: Session, transcript: Path, sections: list[SlideSection], language: str):
-    """Résumé enregistré à la transcription, sinon calculé sur le texte (export Plaud…)."""
+def _transcript_language(session: Session, transcript: Path) -> Optional[str]:
+    """Langue d'une transcription produite par le logiciel (None : fichier externe)."""
     own = session.folder / session.transcript if session.transcript else None
-    if own and own.exists() and Path(transcript).resolve() == own.resolve() and session.summary:
-        return session.summary.get("sentences", []), session.summary.get("keywords", [])
+    if own and own.exists() and Path(transcript).resolve() == own.resolve():
+        return session.language or "fr"
     for lang, info in session.translations.items():
         if Path(transcript).resolve() == (session.folder / info["transcript"]).resolve():
-            summary = info.get("summary", {})
-            return summary.get("sentences", []), summary.get("keywords", [])
+            return lang
+    return None
+
+
+def _summary_for(session: Session, transcript: Path, sections: list[SlideSection], language: str):
+    """(phrases clés, mots-clés, résumé IA, résumés par diapo) pour cette transcription."""
+    lang = _transcript_language(session, transcript)
+    ai_summary = session.ai.get("summary", {}).get(lang, "") if lang else ""
+    slides = session.ai.get("slide_summaries", {}).get(lang, {}) if lang else {}
+    if lang == (session.language or "fr") and session.summary:
+        return (session.summary.get("sentences", []), session.summary.get("keywords", []),
+                ai_summary, slides)
+    if lang in session.translations:
+        summary = session.translations[lang].get("summary", {})
+        return summary.get("sentences", []), summary.get("keywords", []), ai_summary, slides
     from .summarize import summarize
 
     computed = summarize([seg.text for sec in sections for seg in sec.segments], language)
-    return computed.sentences, computed.keywords
+    return computed.sentences, computed.keywords, "", {}
 
 
 def make_report(
@@ -130,10 +149,12 @@ def make_report(
     count = f"{len(session.slides)} {'slides' if language == 'en' else 'diapos'}"
     date = (f"{start:%d/%m/%Y, %H:%M}" if language == "en" else f"{start:%d/%m/%Y à %Hh%M}") if start else ""
     subtitle = " · ".join(part for part in (session.window_title, date, count) if part)
-    sentences, keywords = _summary_for(session, transcript, sections, language)
+    sentences, keywords, ai_summary, slide_summaries = _summary_for(session, transcript, sections, language)
     output = output or session.folder / "compte-rendu.docx"
     return build_report(sections, images, output, subtitle=subtitle, offset=offset,
-                        summary_sentences=sentences, keywords=keywords, language=language)
+                        summary_sentences=sentences, keywords=keywords, language=language,
+                        ai_summary=ai_summary, ai_model=session.ai.get("model", ""),
+                        slide_summaries=slide_summaries)
 
 
 def make_reports(

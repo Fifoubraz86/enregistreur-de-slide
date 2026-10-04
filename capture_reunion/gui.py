@@ -179,7 +179,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_after_tab(), "2. Diapos et compte-rendu")
         self.tabs = tabs
         self.setCentralWidget(tabs)
-        self.resize(760, 700)
+        self.resize(780, 880)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -535,6 +535,24 @@ class MainWindow(QMainWindow):
             "Créer aussi une version traduite (anglais → français, ou français → anglais)")
         self.translate_check.setChecked(self.settings.value("translate", True, type=bool))
         tl.addRow(self.translate_check)
+        self.llm_check = QCheckBox(
+            "Utiliser l'IA locale LM Studio, si elle est lancée (traduction soignée, résumé rédigé)")
+        self.llm_check.setChecked(self.settings.value("use_llm", True, type=bool))
+        tl.addRow(self.llm_check)
+        llm_row = QHBoxLayout()
+        self.llm_url = QLineEdit(self.settings.value("llm_url", "http://localhost:1234"))
+        self.llm_url.setToolTip("Adresse du serveur LM Studio (onglet Developer)")
+        test_btn = QPushButton("Tester")
+        test_btn.clicked.connect(self._test_llm)
+        self.llm_status = QLabel("")
+        self.llm_status.setStyleSheet("color: gray;")
+        llm_row.addWidget(self.llm_url, 1)
+        llm_row.addWidget(test_btn)
+        tl.addRow("Serveur LM Studio", llm_row)
+        tl.addRow("", self.llm_status)
+        self.glossary_edit = QLineEdit(self.settings.value("glossary", ""))
+        self.glossary_edit.setPlaceholderText("Optionnel : fichier .txt, une ligne « terme = traduction »")
+        tl.addRow("Glossaire", self._with_browse(self.glossary_edit, "Glossaire", "Texte (*.txt)"))
         self.vocab_edit = QLineEdit(self.settings.value("vocabulary", ""))
         self.vocab_edit.setPlaceholderText("Optionnel : noms et termes difficiles (ex. RCP, pembrolizumab, Dr Le Gall)")
         tl.addRow("Vocabulaire", self.vocab_edit)
@@ -746,6 +764,19 @@ class MainWindow(QMainWindow):
         vocabulary = self.vocab_edit.text().strip()
         language = self.lang_combo.currentData() or None
         translate = self.translate_check.isChecked()
+        use_llm = self.llm_check.isChecked()
+        llm_url = self.llm_url.text().strip() or "http://localhost:1234"
+        glossary_path = self.glossary_edit.text().strip()
+        from .llm import load_glossary
+
+        try:
+            glossary = load_glossary(Path(glossary_path)) if glossary_path else ""
+        except OSError as exc:
+            QMessageBox.warning(self, "Glossaire", f"Glossaire illisible : {exc}")
+            return
+        self.settings.setValue("use_llm", use_llm)
+        self.settings.setValue("llm_url", llm_url)
+        self.settings.setValue("glossary", glossary_path)
         self.settings.setValue("model", model)
         self.settings.setValue("vocabulary", vocabulary)
         self.settings.setValue("language", language or "")
@@ -757,7 +788,9 @@ class MainWindow(QMainWindow):
         session = self.session
         task = Task(lambda: transcribe_session(session, model, vocabulary,
                                                progress=task.progress.emit,
-                                               language=language, translate=translate))
+                                               language=language, translate=translate,
+                                               use_llm=use_llm, llm_url=llm_url,
+                                               glossary=glossary))
         task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
         task.done.connect(self._transcribed, Q)
         task.failed.connect(self._task_failed, Q)
@@ -768,10 +801,44 @@ class MainWindow(QMainWindow):
         self.transcribe_btn.setEnabled(True)
         self.transcribe_btn.setText("Transcrire")
         self.transcript_edit.setText(str(path))
+        ai = self.session.ai if self.session else {}
+        lines = [f"Transcription terminée :\n{path.with_suffix('.txt')}"]
+        if ai.get("model"):
+            lines.append(f"Résumé rédigé par l'IA locale : {ai['model']}")
+        for lang, info in (self.session.translations if self.session else {}).items():
+            lines.append(f"Version traduite ({lang}) : {info.get('engine', '')}")
+        if ai.get("warnings"):
+            lines.append("⚠ " + "\n⚠ ".join(ai["warnings"]))
         if QMessageBox.question(
-            self, "Transcription", f"Transcription terminée :\n{path.with_suffix('.txt')}\n\nL'ouvrir ?"
+            self, "Transcription", "\n\n".join(lines) + "\n\nOuvrir la transcription ?"
         ) == QMessageBox.StandardButton.Yes:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.with_suffix(".txt"))))
+
+    def _test_llm(self) -> None:
+        from .llm import LMStudio
+
+        self.llm_status.setText("Connexion…")
+        url = self.llm_url.text().strip() or "http://localhost:1234"
+
+        def probe():
+            client = LMStudio(url, timeout=120)
+            name = client.connect()
+            reply = client.chat("Réponds en un seul mot.", "Dis « prêt ».", max_tokens=200)
+            return name, reply
+
+        def done(result):
+            name, reply = result
+            self.llm_status.setStyleSheet("color: #1e8449;")
+            self.llm_status.setText(f"✔ Connecté : {name} (réponse : {reply[:30]})")
+
+        def failed(message):
+            self.llm_status.setStyleSheet("color: #c0392b;")
+            self.llm_status.setText(f"✘ {message}")
+
+        task = Task(probe)
+        task.done.connect(done, Q)
+        task.failed.connect(failed, Q)
+        self._run(task)
 
     def _created(self, paths, button: QPushButton) -> None:
         button.setEnabled(True)

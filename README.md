@@ -65,7 +65,15 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
   - **Qualité** : *Rapide* (small) suffit souvent. *Précis* (medium) ou *Très précis* (large-v3-turbo) reconnaissent mieux le vocabulaire médical, mais sont plus lents. Pour 1 h de réunion, comptez de l'ordre de 10 à 20 min en Rapide sur un portable récent, nettement plus en Précis.
   - **Langue parlée** : laissez « Détection automatique ». Imposer « Français » sur une conférence en anglais ferait *traduire* la reconnaissance vocale, et mal.
   - **Version traduite** : conférence en anglais → version française, conférence en français → version anglaise. La traduction tourne aussi sur le PC (modèles libres Argos/OPUS-MT, environ 100 Mo, téléchargés une fois). C'est une traduction automatique : elle est fidèle sur le fond, mais pas toujours élégante.
+  - **IA locale LM Studio** (recommandé avec une carte graphique) : si LM Studio est lancé avec un modèle chargé et son serveur démarré (onglet *Developer*), il fournit :
+    - un **résumé rédigé et structuré** (sujet, messages clés, données chiffrées, conclusions) ;
+    - un **« En bref » pour chaque diapo** ;
+    - une **traduction soignée**.
+
+    Le bouton **Tester** vérifie la connexion. Si LM Studio n'est pas lancé, le logiciel utilise automatiquement le traducteur Argos et le résumé par phrases clés. Les phrases réellement prononcées restent toujours en annexe, pour vérifier ce que l'IA affirme.
+  - **Glossaire** : un fichier texte, une ligne par terme (`terme anglais = traduction française`), imposé à l'IA lors de la traduction. Voir `glossaire_exemple.txt`.
   - **Vocabulaire** : mots difficiles (noms propres, molécules, sigles) pour aider la reconnaissance.
+  - Si le téléchargement du traducteur Argos est refusé (erreur 403), le message indique un lien à ouvrir dans le navigateur et le dossier où déposer le fichier.
   - Le modèle est téléchargé **une seule fois** (0,5 à 1,6 Go, dans `%LOCALAPPDATA%\CaptureReunion\modeles`). Ensuite, tout fonctionne hors ligne.
   - Résultat :
     - `transcription.txt` : paragraphes et résumé ;
@@ -96,7 +104,7 @@ Une image est analysée chaque seconde :
 .venv\Scripts\python -m capture_reunion enregistrer Zoom --zone 0,0,0.8,1
 .venv\Scripts\python -m capture_reunion enregistrer ecran1
 .venv\Scripts\python -m capture_reunion extraire "chemin\video.mp4"
-.venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --traduire --vocabulaire "RCP, pembrolizumab"
+.venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --traduire --glossaire glossaire_exemple.txt --vocabulaire "RCP, pembrolizumab"
 .venv\Scripts\python -m capture_reunion pptx "dossier de session" --modele modele.potx --transcription plaud.txt --debut-plaud 14:29:50
 .venv\Scripts\python -m capture_reunion compte-rendu "dossier de session" --transcription plaud.txt --debut-plaud 14:29:50
 ```
@@ -107,5 +115,5 @@ Prévenez les participants avant d'enregistrer (RGPD). En RCP, les données de s
 
 ## Pour les développeurs
 
-- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (lecture des transcriptions), `transcribe.py` (transcription locale faster-whisper), `summarize.py` (résumé TextRank), `translate.py` (traduction hors ligne CTranslate2 + modèles Argos), `gui.py` (PySide6).
+- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (lecture des transcriptions), `transcribe.py` (transcription locale faster-whisper), `summarize.py` (résumé TextRank), `translate.py` (traduction hors ligne CTranslate2 + modèles Argos), `llm.py` (IA locale via le serveur LM Studio), `gui.py` (PySide6).
 - Tests : `python -m pytest`. Ils tournent aussi hors Windows : la capture est simulée par une fausse fenêtre.

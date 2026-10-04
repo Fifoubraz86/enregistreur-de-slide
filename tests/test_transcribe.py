@@ -89,7 +89,7 @@ def test_transcribe_session_feeds_report(tmp_path):
                       tracks={"participants": "piste_participants.m4a", "moi": "piste_moi.m4a"})
     session.slides = [SlideRecord(1, 0.0, "d1.png"), SlideRecord(2, 10.0, "d2.png")]
     session.timeline = [(0.0, 1), (10.0, 2)]
-    srt = transcribe_session(session, whisper=FakeWhisper())
+    srt = transcribe_session(session, whisper=FakeWhisper(), use_llm=False)
 
     assert srt.name == "transcription.srt"
     assert Session.load(tmp_path).transcript == "transcription.srt"
@@ -165,7 +165,8 @@ def test_english_talk_paragraphs_summary_and_french_version(tmp_path):
                       window_title="mNETs Webinar")
     session.slides = [SlideRecord(1, 1.0, "d1.png"), SlideRecord(2, 45.0, "d2.png")]
     session.timeline = [(1.0, 1), (45.0, 2)]
-    transcribe_session(session, whisper=EnglishWhisper(), translate=True, translator=FakeTranslator())
+    transcribe_session(session, whisper=EnglishWhisper(), translate=True, translator=FakeTranslator(),
+                       use_llm=False)
 
     loaded = Session.load(tmp_path)
     assert loaded.language == "en"

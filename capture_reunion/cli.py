@@ -65,6 +65,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="langue parlée (défaut : détection automatique)")
     tr.add_argument("--traduire", action="store_true",
                     help="crée aussi une version traduite (anglais ↔ français)")
+    tr.add_argument("--sans-ia", action="store_true",
+                    help="ne pas utiliser LM Studio (traduction Argos, résumé par phrases clés)")
+    tr.add_argument("--lmstudio", default="http://localhost:1234", help="adresse du serveur LM Studio")
+    tr.add_argument("--glossaire", type=Path, help="fichier « terme = traduction », une ligne par terme")
     tr.add_argument("--vocabulaire", default="",
                     help="mots difficiles à reconnaître (noms, termes médicaux), séparés par des virgules")
 
@@ -119,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "transcrire":
+        from .llm import load_glossary
         from .transcribe import transcribe_session
 
         session = _load_session(args.session)
@@ -132,8 +137,13 @@ def main(argv: list[str] | None = None) -> int:
 
         out = transcribe_session(session, args.modele, args.vocabulaire, progress,
                                  language=None if args.langue == "auto" else args.langue,
-                                 translate=args.traduire)
+                                 translate=args.traduire, use_llm=not args.sans_ia,
+                                 llm_url=args.lmstudio, glossary=load_glossary(args.glossaire))
         print(f"\nCréé : {out}")
+        if session.ai.get("model"):
+            print(f"Résumé rédigé par l'IA locale : {session.ai['model']}")
+        for warning in session.ai.get("warnings", []):
+            print(f"Attention : {warning}")
         return 0
 
     from .workflow import compute_offset, make_pptx, make_reports

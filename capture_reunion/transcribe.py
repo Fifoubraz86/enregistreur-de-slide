@@ -29,7 +29,7 @@ import numpy as np
 from .ffmpeg_utils import NO_WINDOW, find_ffmpeg
 from .session import Session
 from .summarize import Summary, summarize
-from .transcript import MIN_INTRO, Segment, merge_segments
+from .transcript import MIN_INTRO, Segment, assign_segments, merge_segments
 
 # Libellé affiché → modèle faster-whisper. Les durées sont des ordres de grandeur
 # pour un portable récent sans carte graphique dédiée.
@@ -204,16 +204,31 @@ SUMMARY_TITLES = {
     "fr": ("RÉSUMÉ (phrases clés extraites automatiquement)", "Mots-clés"),
     "en": ("SUMMARY (key sentences, automatically extracted)", "Keywords"),
 }
+AI_TITLES = {
+    "fr": ("RÉSUMÉ (rédigé par l'IA locale {model} — à vérifier)",
+           "PHRASES CLÉS RÉELLEMENT PRONONCÉES (pour vérification)"),
+    "en": ("SUMMARY (written by the local AI {model} — to be checked)",
+           "KEY SENTENCES ACTUALLY SPOKEN (for verification)"),
+}
 SPEAKER_TRANSLATIONS = {"en": {"Moi": "Me"}}
+SLIDE_LABEL = {"fr": "Diapo", "en": "Slide"}
 
 
 def write_text(
-    segments: list[Segment], path: Path, summary: Optional[Summary] = None, language: str = "fr"
+    segments: list[Segment],
+    path: Path,
+    summary: Optional[Summary] = None,
+    language: str = "fr",
+    ai_summary: str = "",
+    ai_model: str = "",
 ) -> Path:
-    """Version lisible : un paragraphe par prise de parole, puis le résumé."""
+    """Version lisible : un paragraphe par prise de parole, puis le(s) résumé(s)."""
     parts = [s.line() for s in segments]
+    title, kw_title = SUMMARY_TITLES.get(language, SUMMARY_TITLES["fr"])
+    if ai_summary:
+        ai_title, title = AI_TITLES.get(language, AI_TITLES["fr"])
+        parts += ["", ai_title.format(model=ai_model), "", ai_summary.strip()]
     if summary and summary.sentences:
-        title, kw_title = SUMMARY_TITLES.get(language, SUMMARY_TITLES["fr"])
         parts += ["", title, ""] + [f"• {s}" for s in summary.sentences]
         if summary.keywords:
             parts += ["", f"{kw_title} : {', '.join(summary.keywords)}"]
@@ -223,6 +238,31 @@ def write_text(
 
 def _stage(progress, start: float, end: float):
     return (lambda p: progress(start + (end - start) * p)) if progress else None
+
+
+def _parts_for_summary(session: Session, paragraphs: list[Segment], language: str,
+                       max_chars: int = 6000) -> list[tuple[str, str]]:
+    """(libellé, texte) à résumer : une entrée par diapo, sinon par tranche de texte."""
+    label = SLIDE_LABEL.get(language, "Diapo")
+    if session.timeline:
+        sections = assign_segments(session.timeline, paragraphs, 0.0, session.duration or None)
+        texts: dict[Optional[int], list[str]] = {}
+        for section in sections:
+            texts.setdefault(section.slide_index, []).extend(p.text for p in section.segments)
+        return [
+            (f"{label} {index}" if index is not None else "Introduction", " ".join(chunks))
+            for index, chunks in texts.items()
+            if chunks
+        ]
+    parts, current = [], []
+    for p in paragraphs:
+        current.append(p.text)
+        if sum(len(t) for t in current) >= max_chars:
+            parts.append((f"Partie {len(parts) + 1}", " ".join(current)))
+            current = []
+    if current:
+        parts.append((f"Partie {len(parts) + 1}", " ".join(current)))
+    return parts
 
 
 def transcribe_session(
@@ -235,42 +275,116 @@ def transcribe_session(
     language: Optional[str] = None,
     translate: bool = False,
     translator=None,
+    use_llm: bool = True,
+    llm_url: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    glossary: str = "",
+    llm=None,
 ) -> Path:
     """Transcrit l'enregistrement.
 
     Écrit transcription.srt (horodatage fin, pour les diapos) et transcription.txt
-    (paragraphes + résumé) ; avec ``translate``, aussi transcription_<langue>.srt/.txt.
+    (paragraphes + résumés) ; avec ``translate``, aussi transcription_<langue>.srt/.txt.
+
+    Si LM Studio est lancé (``use_llm``), il rédige un résumé de chaque diapo et un
+    résumé global, et assure la traduction ; sinon traduction Argos et phrases clés.
+    Les problèmes non bloquants sont listés dans ``session.ai["warnings"]``.
     """
-    split = 0.85 if translate else 1.0
+    from .llm import LLMError, LMStudio
+
+    warnings: list[str] = []
+    client = None
+    if use_llm:
+        client = llm or LMStudio(llm_url or "http://localhost:1234", llm_model)
+        try:
+            client.connect()
+        except LLMError as exc:
+            warnings.append(f"IA locale non utilisée : {exc}")
+            client = None
+
+    steps = [("transcription", 6)] + ([("resume", 2)] if client else []) + ([("traduction", 2)] if translate else [])
+    total = sum(w for _, w in steps)
+    bounds, acc = {}, 0
+    for name, w in steps:
+        bounds[name] = (acc / total, (acc + w) / total)
+        acc += w
+
     segments, lang = transcribe_tracks(session_tracks(session), model, language, vocabulary,
-                                       _stage(progress, 0, split), cancelled, whisper)
+                                       _stage(progress, *bounds["transcription"]), cancelled, whisper)
     srt = write_srt(segments, session.folder / TRANSCRIPT_FILE)
     paragraphs = merge_segments(segments, [t for t, _ in session.timeline if t > MIN_INTRO])
     summary = summarize([p.text for p in paragraphs], lang)
-    write_text(paragraphs, session.folder / "transcription.txt", summary, lang)
     session.transcript = TRANSCRIPT_FILE
     session.language = lang
     session.summary = {"sentences": summary.sentences, "keywords": summary.keywords}
     session.translations = {}
+    session.ai = {}
+
+    ai_text, slide_summaries = "", {}
+    if client:
+        try:
+            parts = _parts_for_summary(session, paragraphs, lang)
+            stage = _stage(progress, *bounds["resume"])
+            summarized = []
+            for i, (label, text) in enumerate(parts):
+                summarized.append((label, client.summarize_part(text[:12000], lang, label)))
+                if stage:
+                    stage((i + 1) / (len(parts) + 1))
+            ai_text = client.summarize_global(summarized, lang, session.window_title)
+            prefix = SLIDE_LABEL.get(lang, "Diapo") + " "
+            slide_summaries = {label[len(prefix):]: text for label, text in summarized
+                               if label.startswith(prefix) and text}
+            session.ai = {"model": client.model, "summary": {lang: ai_text},
+                          "slide_summaries": {lang: slide_summaries}}
+        except LLMError as exc:
+            warnings.append(f"Résumé par l'IA locale impossible : {exc}")
+            ai_text, slide_summaries = "", {}
+    write_text(paragraphs, session.folder / "transcription.txt", summary, lang,
+               ai_text, session.ai.get("model", ""))
+    session.save()
 
     if translate:
-        from .translate import Translator, target_language
+        from .translate import target_language
 
         target = target_language(lang)
-        tr = translator or Translator(lang, target)
-        texts = tr.translate([p.text for p in paragraphs], _stage(progress, split, 1.0))
-        names = SPEAKER_TRANSLATIONS.get(target, {})
-        translated = [Segment(p.start, t, names.get(p.speaker, p.speaker), p.end)
-                      for p, t in zip(paragraphs, texts)]
-        t_summary = Summary(tr.translate_sentences(summary.sentences),
-                            tr.translate_sentences(summary.keywords))
-        t_srt = f"transcription_{target}.srt"
-        write_srt(translated, session.folder / t_srt)
-        write_text(translated, session.folder / f"transcription_{target}.txt", t_summary, target)
-        session.translations[target] = {
-            "transcript": t_srt,
-            "summary": {"sentences": t_summary.sentences, "keywords": t_summary.keywords},
-        }
+        stage = _stage(progress, *bounds["traduction"])
+        try:
+            if client:
+                texts = client.translate([p.text for p in paragraphs], lang, target, glossary, stage)
+                t_sentences = client.translate(summary.sentences, lang, target, glossary)
+                t_keywords = [k.strip() for k in client.translate(
+                    [", ".join(summary.keywords)], lang, target, glossary)[0].split(",") if k.strip()]
+                t_ai = client.translate_document(ai_text, lang, target, glossary) if ai_text else ""
+                keys = list(slide_summaries)
+                t_slides = dict(zip(keys, client.translate([slide_summaries[k] for k in keys],
+                                                           lang, target, glossary))) if keys else {}
+            else:
+                from .translate import Translator
+
+                tr = translator or Translator(lang, target)
+                texts = tr.translate([p.text for p in paragraphs], stage)
+                t_sentences = tr.translate_sentences(summary.sentences)
+                t_keywords = tr.translate_sentences(summary.keywords)
+                t_ai, t_slides = "", {}
+        except Exception as exc:  # la transcription reste utilisable sans traduction
+            warnings.append(f"Traduction impossible : {exc}")
+        else:
+            names = SPEAKER_TRANSLATIONS.get(target, {})
+            translated = [Segment(p.start, t, names.get(p.speaker, p.speaker), p.end)
+                          for p, t in zip(paragraphs, texts)]
+            t_srt = f"transcription_{target}.srt"
+            write_srt(translated, session.folder / t_srt)
+            write_text(translated, session.folder / f"transcription_{target}.txt",
+                       Summary(t_sentences, t_keywords), target, t_ai, session.ai.get("model", ""))
+            session.translations[target] = {
+                "transcript": t_srt,
+                "summary": {"sentences": t_sentences, "keywords": t_keywords},
+                "engine": f"IA locale ({client.model})" if client else "Argos",
+            }
+            if t_ai:
+                session.ai["summary"][target] = t_ai
+                session.ai["slide_summaries"][target] = t_slides
+    session.ai["warnings"] = warnings
     session.save()
     if progress:
         progress(1.0)

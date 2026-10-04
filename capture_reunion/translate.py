@@ -27,11 +27,32 @@ def target_language(source: str) -> str:
     return "en" if source == "fr" else "fr"
 
 
+# Certains serveurs refusent (403) les requêtes qui se présentent comme « Python-urllib ».
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/126.0 Safari/537.36 CaptureReunion",
+    "Accept": "*/*",
+}
+
+
+def _open(url: str, timeout: float):
+    return urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=timeout)
+
+
 def _download(url: str, dest: Path) -> None:
     tmp = dest.with_suffix(dest.suffix + ".part")
-    with urllib.request.urlopen(url, timeout=60) as response, open(tmp, "wb") as out:
+    with _open(url, 120) as response, open(tmp, "wb") as out:
         shutil.copyfileobj(response, out)
     tmp.replace(dest)
+
+
+def _extract_dropped(root: Path) -> Optional[Path]:
+    """Modèle .argosmodel téléchargé à la main et déposé dans le dossier."""
+    for archive in sorted(root.glob("*.argosmodel")):
+        with zipfile.ZipFile(archive) as z:
+            z.extractall(root)
+        archive.unlink()
+    return _find_model_dir(root)
 
 
 def _find_model_dir(root: Path) -> Optional[Path]:
@@ -44,22 +65,26 @@ def _find_model_dir(root: Path) -> Optional[Path]:
 def ensure_model(source: str, target: str, root: Optional[Path] = None) -> Path:
     """Dossier du modèle source→cible, téléchargé si besoin."""
     root = (root or models_dir()) / f"traduction-{source}_{target}"
-    found = _find_model_dir(root) if root.exists() else None
+    root.mkdir(parents=True, exist_ok=True)
+    found = _find_model_dir(root) or _extract_dropped(root)
     if found:
         return found
-    root.mkdir(parents=True, exist_ok=True)
+    link = f"https://argos-net.com/v1/translate-{source}_{target}-1_9.argosmodel"
     try:
-        with urllib.request.urlopen(INDEX_URL, timeout=30) as response:
+        with _open(INDEX_URL, 30) as response:
             index = json.load(response)
         package = next(p for p in index if p["from_code"] == source and p["to_code"] == target)
+        link = package["links"][0]
         archive = root / "modele.argosmodel"
-        _download(package["links"][0], archive)
+        _download(link, archive)
     except StopIteration:
         raise RuntimeError(f"Pas de modèle de traduction {source} → {target}.") from None
     except Exception as exc:
         raise RuntimeError(
-            "Téléchargement du modèle de traduction impossible. La première fois, une "
-            f"connexion Internet est nécessaire.\nDétail : {exc}"
+            f"Téléchargement du modèle de traduction impossible ({exc}).\n\n"
+            f"Solution : ouvrez ce lien dans votre navigateur :\n{link}\n"
+            f"puis déposez le fichier téléchargé (.argosmodel) dans :\n{root}\n"
+            "et relancez la transcription.\n\nOu utilisez LM Studio (meilleure traduction)."
         ) from exc
     with zipfile.ZipFile(archive) as z:
         z.extractall(root)

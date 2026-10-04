@@ -39,6 +39,9 @@ class Session:
     """Langue détectée de la transcription (« fr », « en »…)."""
     summary: dict = field(default_factory=dict)
     """Résumé : {"sentences": [...], "keywords": [...]}."""
+    ai: dict = field(default_factory=dict)
+    """Résultats de l'IA locale : {"model", "summary": {langue: texte},
+    "slide_summaries": {langue: {n° diapo: texte}}, "warnings": [...]}."""
     translations: dict = field(default_factory=dict)
     """Versions traduites : {"fr": {"transcript": "transcription_fr.srt", "summary": {...}}}."""
     duration: float = 0.0
@@ -92,6 +95,7 @@ class Session:
         session.language = data.get("language")
         session.summary = dict(data.get("summary") or {})
         session.translations = dict(data.get("translations") or {})
+        session.ai = dict(data.get("ai") or {})
         session.duration = float(data.get("duration") or 0.0)
         zone = data.get("zone")
         session.zone = tuple(zone) if zone else None
