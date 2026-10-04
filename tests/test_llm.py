@@ -29,6 +29,7 @@ class FakeLMStudio(BaseHTTPRequestHandler):
     calls: list = []
     drop_marker = False  # simule un modèle qui « oublie » un paragraphe
     style = "brackets"  # brackets | bold | none | english
+    jit = True  # chargement « Just-In-Time » activé dans LM Studio
 
     def log_message(self, *args):
         pass
@@ -53,6 +54,13 @@ class FakeLMStudio(BaseHTTPRequestHandler):
 
     def do_POST(self):
         req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if req["model"] == "qwen-autre" and not FakeLMStudio.jit:
+            body = b'{"error": "Model is not loaded"}'
+            self.send_response(400)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         system, user = req["messages"][0]["content"], req["messages"][1]["content"]
         FakeLMStudio.calls.append((req["model"], system, user))
         if "marqueur [n]" in system:  # traduction par blocs
@@ -90,6 +98,7 @@ def server():
     FakeLMStudio.calls = []
     FakeLMStudio.drop_marker = False
     FakeLMStudio.style = "brackets"
+    FakeLMStudio.jit = True
     httpd = HTTPServer(("127.0.0.1", 0), FakeLMStudio)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -99,6 +108,40 @@ def server():
 def test_connect_prefers_loaded_llm(server):
     client = LMStudio(server + "/v1")
     assert client.connect() == "google/gemma-4-26b-a4b-qat"
+
+
+def test_model_infos_mark_loaded(server):
+    infos = LMStudio(server).model_infos()
+    assert infos == [{"id": "google/gemma-4-26b-a4b-qat", "loaded": True},
+                     {"id": "qwen-autre", "loaded": False}]
+
+
+def test_chosen_model_is_used_even_if_another_is_loaded(server):
+    """Régression : le modèle choisi est utilisé (chargé à la demande), pas celui déjà chargé."""
+    client = LMStudio(server, model="qwen-autre")
+    assert client.connect() == "qwen-autre" and client.needs_loading
+    client.chat("s", "Passage (x) : bonjour")
+    assert FakeLMStudio.calls[-1][0] == "qwen-autre"
+    assert not client.needs_loading
+
+
+def test_chosen_model_load_failure_is_explained(server):
+    FakeLMStudio.jit = False
+    client = LMStudio(server, model="qwen-autre")
+    client.connect()
+    with pytest.raises(LLMError, match="Just-In-Time"):
+        client.chat("s", "Passage (x) : bonjour")
+
+
+def test_unknown_model_is_an_error(server):
+    with pytest.raises(LLMError, match="n'existe pas"):
+        LMStudio(server, model="gemma-inexistant").connect()
+
+
+def test_pipeline_uses_chosen_model(server, session):
+    transcribe_session(session, whisper=Whisper(), llm_url=server, llm_model="qwen-autre")
+    assert Session.load(session.folder).ai["model"] == "qwen-autre"
+    assert {c[0] for c in FakeLMStudio.calls} == {"qwen-autre"}
 
 
 def test_unreachable_server_message():

@@ -70,7 +70,9 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
     - un **« En bref » pour chaque diapo** ;
     - une **traduction soignée**.
 
-    Le bouton **Tester** vérifie la connexion. Si LM Studio n'est pas lancé, le logiciel utilise automatiquement le traducteur Argos et le résumé par phrases clés. Les phrases réellement prononcées restent toujours en annexe, pour vérifier ce que l'IA affirme.
+    **Modèle IA** : cliquez sur **Actualiser** pour lister les modèles de LM Studio (« ● chargé » indique ceux déjà en mémoire), puis choisissez-en un. S'il n'est pas chargé, LM Studio le charge à la première demande ; il faut pour cela que le chargement à la demande (« Just-In-Time model loading ») soit activé dans l'onglet Developer. Le premier traitement attend alors une à deux minutes. Si un autre modèle occupe déjà la carte graphique, déchargez-le d'abord.
+
+    Le bouton **Tester** vérifie la connexion et charge le modèle choisi. Si LM Studio n'est pas lancé, le logiciel utilise automatiquement le traducteur Argos et le résumé par phrases clés. Les phrases réellement prononcées restent toujours en annexe, pour vérifier ce que l'IA affirme.
   - **Glossaire** : un fichier texte, une ligne par terme (`terme anglais = traduction française`), imposé à l'IA lors de la traduction. Voir `glossaire_exemple.txt`.
   - **Vocabulaire** : mots difficiles (noms propres, molécules, sigles) pour aider la reconnaissance.
   - Si le téléchargement du traducteur Argos est refusé (erreur 403), le message indique un lien à ouvrir dans le navigateur et le dossier où déposer le fichier.

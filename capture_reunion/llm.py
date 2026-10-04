@@ -49,6 +49,7 @@ class LMStudio:
         self.model = model
         self.timeout = timeout
         self.last_failures = 0  # paragraphes que la dernière traduction n'a pas pu traduire
+        self.needs_loading = False
 
     # -- HTTP ------------------------------------------------------------
     def _request(self, path: str, payload: Optional[dict] = None, timeout: Optional[float] = None):
@@ -68,36 +69,64 @@ class LMStudio:
                 f"démarrez le serveur (onglet Developer)."
             ) from exc
 
-    def models(self) -> list[str]:
-        """Modèles disponibles, ceux déjà chargés en premier."""
+    def model_infos(self) -> list[dict]:
+        """Modèles de langage disponibles : [{"id", "loaded"}], les chargés en premier."""
         try:  # API native : indique l'état chargé / non chargé
             data = self._request("/api/v0/models", timeout=10)["data"]
-            llms = [m for m in data if m.get("type", "llm") in ("llm", "vlm")]
-            llms.sort(key=lambda m: m.get("state") != "loaded")
-            return [m["id"] for m in llms]
+            infos = [{"id": m["id"], "loaded": m.get("state") == "loaded"}
+                     for m in data if m.get("type", "llm") in ("llm", "vlm")]
         except (LLMError, KeyError, TypeError):
             data = self._request("/v1/models", timeout=10).get("data", [])
-            return [m["id"] for m in data if "embed" not in m["id"].lower()]
+            infos = [{"id": m["id"], "loaded": None} for m in data if "embed" not in m["id"].lower()]
+        infos.sort(key=lambda m: m["loaded"] is not True)
+        return infos
+
+    def models(self) -> list[str]:
+        return [m["id"] for m in self.model_infos()]
 
     def connect(self) -> str:
-        """Vérifie la connexion et choisit le modèle ; renvoie son nom."""
-        models = self.models()
-        if not models:
+        """Vérifie la connexion et le modèle ; renvoie son nom.
+
+        Sans modèle imposé, on prend celui qui est chargé. Un modèle imposé mais pas
+        encore chargé sera chargé par LM Studio à la première demande (chargement
+        « Just-In-Time »), ce qui peut prendre une à deux minutes.
+        """
+        infos = self.model_infos()
+        if not infos:
             raise LLMError("LM Studio est lancé mais aucun modèle n'est disponible.")
-        if not self.model or self.model not in models:
-            self.model = models[0]
+        if self.model:
+            match = next((m for m in infos if m["id"] == self.model), None)
+            if match is None:
+                raise LLMError(
+                    f"Le modèle « {self.model} » n'existe pas dans LM Studio. "
+                    f"Modèles disponibles : {', '.join(m['id'] for m in infos)}")
+            self.needs_loading = match["loaded"] is False
+        else:
+            self.model = infos[0]["id"]
+            self.needs_loading = infos[0]["loaded"] is False
         return self.model
 
     def chat(self, system: str, user: str, max_tokens: int = 4096, temperature: float = 0.2) -> str:
         if not self.model:
             self.connect()
-        data = self._request("/v1/chat/completions", {
-            "model": self.model,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "stream": False,
-        })
+        try:
+            data = self._request("/v1/chat/completions", {
+                "model": self.model,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": False,
+            })
+        except LLMError as exc:
+            if self.needs_loading and "injoignable" not in str(exc):
+                raise LLMError(
+                    f"LM Studio n'a pas pu charger « {self.model} » ({exc}).\n"
+                    "Vérifiez dans LM Studio, onglet Developer, que le chargement à la demande "
+                    "(« Just-In-Time model loading ») est activé, ou chargez le modèle vous-même. "
+                    "Si un autre modèle occupe déjà la carte graphique, déchargez-le d'abord."
+                ) from exc
+            raise
+        self.needs_loading = False
         try:
             text = data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:

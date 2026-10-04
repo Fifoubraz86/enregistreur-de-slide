@@ -68,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     tr.add_argument("--sans-ia", action="store_true",
                     help="ne pas utiliser LM Studio (traduction Argos, résumé par phrases clés)")
     tr.add_argument("--lmstudio", default="http://localhost:1234", help="adresse du serveur LM Studio")
+    tr.add_argument("--modele-ia", help="modèle LM Studio à utiliser (défaut : celui qui est chargé)")
     tr.add_argument("--glossaire", type=Path, help="fichier « terme = traduction », une ligne par terme")
     tr.add_argument("--vocabulaire", default="",
                     help="mots difficiles à reconnaître (noms, termes médicaux), séparés par des virgules")
@@ -138,7 +139,8 @@ def main(argv: list[str] | None = None) -> int:
         out = transcribe_session(session, args.modele, args.vocabulaire, progress,
                                  language=None if args.langue == "auto" else args.langue,
                                  translate=args.traduire, use_llm=not args.sans_ia,
-                                 llm_url=args.lmstudio, glossary=load_glossary(args.glossaire))
+                                 llm_url=args.lmstudio, llm_model=args.modele_ia,
+                                 glossary=load_glossary(args.glossaire))
         print(f"\nCréé : {out}")
         if session.ai.get("model"):
             print(f"Résumé rédigé par l'IA locale : {session.ai['model']}")

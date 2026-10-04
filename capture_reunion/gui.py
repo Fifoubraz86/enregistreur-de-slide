@@ -549,6 +549,18 @@ class MainWindow(QMainWindow):
         llm_row.addWidget(self.llm_url, 1)
         llm_row.addWidget(test_btn)
         tl.addRow("Serveur LM Studio", llm_row)
+        model_row = QHBoxLayout()
+        self.llm_model_combo = QComboBox()
+        self.llm_model_combo.addItem("Celui qui est chargé dans LM Studio", "")
+        saved_model = self.settings.value("llm_model", "")
+        if saved_model:
+            self.llm_model_combo.addItem(saved_model, saved_model)
+            self.llm_model_combo.setCurrentIndex(1)
+        refresh_models = QPushButton("Actualiser")
+        refresh_models.clicked.connect(self._refresh_llm_models)
+        model_row.addWidget(self.llm_model_combo, 1)
+        model_row.addWidget(refresh_models)
+        tl.addRow("Modèle IA", model_row)
         tl.addRow("", self.llm_status)
         self.glossary_edit = QLineEdit(self.settings.value("glossary", ""))
         self.glossary_edit.setPlaceholderText("Optionnel : fichier .txt, une ligne « terme = traduction »")
@@ -774,8 +786,10 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, "Glossaire", f"Glossaire illisible : {exc}")
             return
+        llm_model = self.llm_model_combo.currentData() or None
         self.settings.setValue("use_llm", use_llm)
         self.settings.setValue("llm_url", llm_url)
+        self.settings.setValue("llm_model", llm_model or "")
         self.settings.setValue("glossary", glossary_path)
         self.settings.setValue("model", model)
         self.settings.setValue("vocabulary", vocabulary)
@@ -790,6 +804,7 @@ class MainWindow(QMainWindow):
                                                progress=task.progress.emit,
                                                language=language, translate=translate,
                                                use_llm=use_llm, llm_url=llm_url,
+                                               llm_model=llm_model,
                                                glossary=glossary))
         task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
         task.done.connect(self._transcribed, Q)
@@ -817,11 +832,15 @@ class MainWindow(QMainWindow):
     def _test_llm(self) -> None:
         from .llm import LMStudio
 
-        self.llm_status.setText("Connexion…")
         url = self.llm_url.text().strip() or "http://localhost:1234"
+        chosen = self.llm_model_combo.currentData() or None
+        self.settings.setValue("llm_model", chosen or "")
+        self.llm_status.setStyleSheet("color: gray;")
+        self.llm_status.setText(
+            f"Connexion… (chargement de {chosen} si besoin : jusqu'à 1-2 min)" if chosen else "Connexion…")
 
         def probe():
-            client = LMStudio(url, timeout=120)
+            client = LMStudio(url, model=chosen, timeout=300)
             name = client.connect()
             reply = client.chat("Réponds en un seul mot.", "Dis « prêt ».", max_tokens=200)
             return name, reply
@@ -836,6 +855,34 @@ class MainWindow(QMainWindow):
             self.llm_status.setText(f"✘ {message}")
 
         task = Task(probe)
+        task.done.connect(done, Q)
+        task.failed.connect(failed, Q)
+        self._run(task)
+
+    def _refresh_llm_models(self) -> None:
+        from .llm import LMStudio
+
+        url = self.llm_url.text().strip() or "http://localhost:1234"
+        self.llm_status.setStyleSheet("color: gray;")
+        self.llm_status.setText("Lecture des modèles de LM Studio…")
+
+        def done(infos):
+            current = self.llm_model_combo.currentData()
+            self.llm_model_combo.clear()
+            self.llm_model_combo.addItem("Celui qui est chargé dans LM Studio", "")
+            for info in infos:
+                mark = "  ● chargé" if info["loaded"] else ""
+                self.llm_model_combo.addItem(f"{info['id']}{mark}", info["id"])
+            index = self.llm_model_combo.findData(current)
+            self.llm_model_combo.setCurrentIndex(max(0, index))
+            self.llm_status.setStyleSheet("color: gray;")
+            self.llm_status.setText(f"{len(infos)} modèle(s) trouvé(s). Choisissez-en un puis « Tester ».")
+
+        def failed(message):
+            self.llm_status.setStyleSheet("color: #c0392b;")
+            self.llm_status.setText(f"✘ {message}")
+
+        task = Task(lambda: LMStudio(url).model_infos())
         task.done.connect(done, Q)
         task.failed.connect(failed, Q)
         self._run(task)
