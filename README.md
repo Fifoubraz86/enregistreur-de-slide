@@ -73,7 +73,8 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
     **Modèle IA** : cliquez sur **Actualiser** pour lister les modèles de LM Studio (« ● chargé » indique ceux déjà en mémoire), puis choisissez-en un. S'il n'est pas chargé, LM Studio le charge à la première demande ; il faut pour cela que le chargement à la demande (« Just-In-Time model loading ») soit activé dans l'onglet Developer. Le premier traitement attend alors une à deux minutes. Si un autre modèle occupe déjà la carte graphique, déchargez-le d'abord.
 
     Le bouton **Tester** vérifie la connexion et charge le modèle choisi. Si LM Studio n'est pas lancé, le logiciel utilise automatiquement le traducteur Argos et le résumé par phrases clés. Les phrases réellement prononcées restent toujours en annexe, pour vérifier ce que l'IA affirme.
-  - **Glossaire** : un fichier texte, une ligne par terme (`terme anglais = traduction française`), imposé à l'IA lors de la traduction. Voir `glossaire_exemple.txt`.
+  - **Glossaire** : le glossaire d'endocrinologie, diabétologie et TNE fourni dans `glossaires/` est utilisé par défaut. Il comporte environ 460 termes, au format `ABRÉV — Terme français — English term (ABBR)`. À chaque traduction, seuls les termes présents dans le passage sont transmis à l'IA, pluriels et orthographes britannique ou américaine compris. Le format simple `terme anglais = terme français` est aussi accepté.
+  - **Thème de la réunion** : un chapitre du glossaire (ex. « Tumeurs neuroendocrines… »). Ses termes sont soufflés à la reconnaissance vocale, pour mieux reconnaître les abréviations et les noms de molécules.
   - **Vocabulaire** : mots difficiles (noms propres, molécules, sigles) pour aider la reconnaissance.
   - Si le téléchargement du traducteur Argos est refusé (erreur 403), le message indique un lien à ouvrir dans le navigateur et le dossier où déposer le fichier.
   - Le modèle est téléchargé **une seule fois** (0,5 à 1,6 Go, dans `%LOCALAPPDATA%\CaptureReunion\modeles`). Ensuite, tout fonctionne hors ligne.
@@ -106,7 +107,7 @@ Une image est analysée chaque seconde :
 .venv\Scripts\python -m capture_reunion enregistrer Zoom --zone 0,0,0.8,1
 .venv\Scripts\python -m capture_reunion enregistrer ecran1
 .venv\Scripts\python -m capture_reunion extraire "chemin\video.mp4"
-.venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --traduire --glossaire glossaire_exemple.txt --vocabulaire "RCP, pembrolizumab"
+.venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --traduire --theme neuroendocrines --vocabulaire "RCP, pembrolizumab"
 .venv\Scripts\python -m capture_reunion pptx "dossier de session" --modele modele.potx --transcription plaud.txt --debut-plaud 14:29:50
 .venv\Scripts\python -m capture_reunion compte-rendu "dossier de session" --transcription plaud.txt --debut-plaud 14:29:50
 ```

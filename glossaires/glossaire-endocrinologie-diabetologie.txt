@@ -1,0 +1,541 @@
+GLOSSAIRE — ENDOCRINOLOGIE · DIABÉTOLOGIE · TNE
+Termes et abréviations employés dans la boîte à outils décisionnels
+Format de chaque ligne :  ABRÉVIATION — Terme complet en français — English translation (English abbreviation)
+« – » en première colonne = pas d'abréviation usuelle.
+Version du 04/10/2026
+
+
+==================================================================
+1. MÉTHODOLOGIE, NIVEAUX DE PREUVE, TERMES TRANSVERSAUX
+==================================================================
+– — Accord d'experts / avis d'experts — Expert consensus / expert opinion
+AMM — Autorisation de mise sur le marché — Marketing authorization
+ATCD — Antécédents — (Medical) history
+– — Bonne pratique (déclaration de) — Good practice statement (GPS)
+CI — Contre-indication — Contraindication
+– — Décision médicale partagée — Shared decision-making
+EI — Effets indésirables — Adverse events / side effects
+ETP — Éducation thérapeutique du patient — Therapeutic patient education
+ETP — Équivalent temps plein — Full-time equivalent (FTE)
+GPS — Déclaration de bonne pratique (ATA) — Good Practice Statement
+GRADE — Système de gradation des recommandations — Grading of Recommendations, Assessment, Development and Evaluation
+IC95 — Intervalle de confiance à 95 % — 95 % confidence interval (95 % CI)
+LSN — Limite supérieure de la normale — Upper limit of normal (ULN)
+– — Niveau de preuve (I–V) / grade de recommandation (A–E) (ESMO) — Level of evidence / grade of recommendation
+OR — Rapport de cotes — Odds ratio
+PEC — Prise en charge — Management / care
+– — Recommandation forte / conditionnelle — Strong / conditional recommendation
+– — « Nous recommandons » / « nous suggérons » — "We recommend" / "we suggest"
+RCP — Réunion de concertation pluridisciplinaire — Multidisciplinary team meeting / tumour board (MDT)
+RCT — Essai contrôlé randomisé — Randomized controlled trial
+SA — Semaines d'aménorrhée — Weeks of gestation (gestational weeks)
+VPP — Valeur prédictive positive — Positive predictive value (PPV)
+VPN — Valeur prédictive négative — Negative predictive value (NPV)
+
+
+==================================================================
+2. EXAMENS, IMAGERIE, VOIES D'ADMINISTRATION, BIOLOGIE COURANTE
+==================================================================
+ALAT / ASAT — Alanine / aspartate aminotransférase (transaminases) — Alanine / aspartate aminotransferase (ALT / AST)
+CK — Créatine kinase — Creatine kinase
+DMO — Densité minérale osseuse (ostéodensitométrie) — Bone mineral density (BMD) / DXA
+ECG — Électrocardiogramme — Electrocardiogram
+EE — Écho-endoscopie — Endoscopic ultrasound (EUS)
+EBUS — Échographie endobronchique — Endobronchial ultrasound
+FC — Fréquence cardiaque — Heart rate (HR)
+FDG — 18F-fluorodésoxyglucose — 18F-fluorodeoxyglucose
+FISH — Hybridation in situ en fluorescence — Fluorescence in situ hybridization
+GGT — Gamma-glutamyl-transférase — Gamma-glutamyl transferase
+IHC — Immunohistochimie — Immunohistochemistry
+IM / IV / SC — Intramusculaire / intraveineuse / sous-cutanée — Intramuscular / intravenous / subcutaneous
+IRM — Imagerie par résonance magnétique — Magnetic resonance imaging (MRI)
+IVSE — Intraveineux à la seringue électrique — Continuous IV infusion (syringe driver)
+LC-MS/MS — Chromatographie liquide couplée à la spectrométrie de masse en tandem — Liquid chromatography–tandem mass spectrometry
+LP — Libération prolongée — Long-acting / prolonged-release (LAR)
+NFS — Numération formule sanguine — Complete blood count (CBC)
+NGS — Séquençage de nouvelle génération — Next-generation sequencing
+PA / TA — Pression (tension) artérielle — Blood pressure (BP)
+PAL — Phosphatases alcalines — Alkaline phosphatase (ALP)
+RT — Radiothérapie — Radiotherapy
+SPECT-CT / TEMP — Tomographie d'émission monophotonique couplée au scanner — Single-photon emission CT
+TDM — Tomodensitométrie (scanner) — Computed tomography (CT)
+TEP / TEP-TDM — Tomographie par émission de positons (couplée au scanner) — Positron emission tomography (PET / PET-CT)
+UH — Unités Hounsfield — Hounsfield units (HU)
+US — Échographie (ultrasons) — Ultrasound (US)
+
+
+==================================================================
+3. THYROÏDE (FONCTION, AUTO-IMMUNITÉ, GROSSESSE)
+==================================================================
+– — Agranulocytose — Agranulocytosis
+ATS — Antithyroïdiens de synthèse — Antithyroid drugs (ATD)
+– — Anticorps hétérophiles (interférence de dosage) — Heterophile antibodies (assay interference)
+– — Basedow (maladie de) — Graves' disease
+– — Biotine (interférence de dosage) — Biotin (assay interference)
+– — Carbimazole — Carbimazole
+– — Euthyroïdie — Euthyroidism
+– — Goitre multinodulaire toxique — Toxic multinodular goitre
+GTT — Thyrotoxicose gestationnelle transitoire — Gestational transient thyrotoxicosis
+– — Hypothyroïdie infraclinique (fruste) / patente — Subclinical / overt hypothyroidism
+– — Hypothyroxinémie isolée — Isolated hypothyroxinaemia
+LT3 — Liothyronine — Liothyronine
+LT4 / L-T4 — Lévothyroxine — Levothyroxine
+MMI — Méthimazole (thiamazole) — Methimazole (thiamazole)
+– — Macro-TSH — Macro-TSH
+– — Nodule toxique (adénome toxique) — Toxic adenoma
+PNN — Polynucléaires neutrophiles — Absolute neutrophil count (ANC)
+PPT — Thyroïdite du post-partum — Postpartum thyroiditis
+PTU — Propylthiouracile — Propylthiouracil
+T3L / FT3 — Triiodothyronine libre — Free triiodothyronine (FT3)
+T4L / FT4 — Thyroxine libre — Free thyroxine (FT4)
+TT3 / TT4 — T3 / T4 totale — Total T3 / total T4
+TPOAb (Ac anti-TPO) — Anticorps anti-thyroperoxydase — Thyroid peroxidase antibodies
+TRAK / TRAb / TSHR-Ab — Anticorps anti-récepteur de la TSH — TSH-receptor antibodies
+TSH — Thyréostimuline (thyrotropine) — Thyroid-stimulating hormone (thyrotropin)
+TSI — Immunoglobulines thyréostimulantes — Thyroid-stimulating immunoglobulins
+– — Thyrotoxicose — Thyrotoxicosis
+
+--- Orbitopathie ---
+CAS — Score d'activité clinique (/7) — Clinical Activity Score
+DON — Neuropathie optique dysthyroïdienne — Dysthyroid optic neuropathy
+GO — Orbitopathie basedowienne (de Graves) — Graves' orbitopathy (thyroid eye disease, TED)
+MP IV — Méthylprednisolone intraveineuse — Intravenous methylprednisolone (IVMP)
+– — Mycophénolate — Mycophenolate
+– — Sélénium — Selenium
+– — Décompression orbitaire — Orbital decompression
+
+
+==================================================================
+4. CANCERS THYROÏDIENS (DIFFÉRENCIÉS ET MÉDULLAIRE)
+==================================================================
+ACE / CEA — Antigène carcino-embryonnaire — Carcinoembryonic antigen
+ATC — Carcinome anaplasique de la thyroïde — Anaplastic thyroid carcinoma
+– — Catégorie de risque initiale (bas / bas-intermédiaire / intermédiaire-élevé / élevé) — Initial risk category (low / low-intermediate / intermediate-high / high)
+– — Curage central (niveau VI) / latéral — Central (level VI) / lateral neck dissection
+Ctn — Calcitonine — Calcitonin
+– — Cytoponction (à l'aiguille fine) — Fine-needle aspiration (FNA)
+DTC / CDT — Cancer différencié de la thyroïde — Differentiated thyroid cancer
+ENE — Extension extranodale (effraction capsulaire ganglionnaire) — Extranodal extension
+ETE — Extension extrathyroïdienne (microscopique / macroscopique) — Extrathyroidal extension (microscopic / gross)
+FNMTC — Cancer thyroïdien non médullaire familial — Familial non-medullary thyroid cancer
+FTC — Carcinome folliculaire de la thyroïde — Follicular thyroid carcinoma
+IEFVPTC — Variante folliculaire encapsulée invasive du carcinome papillaire — Invasive encapsulated follicular variant of papillary thyroid carcinoma
+IMA / RIA — Dosage immunométrique / radio-immunologique — Immunometric assay / radioimmunoassay
+IRA / RAI / I-131 — Iode radioactif (iode 131), irathérapie — Radioactive iodine (radioiodine, 131I)
+ITK — Inhibiteur de tyrosine kinase — Tyrosine kinase inhibitor (TKI)
+LNR — Rapport ganglionnaire (ganglions envahis / examinés) — Lymph node ratio
+– — Lobo-isthmectomie (lobectomie) — Lobectomy (hemithyroidectomy)
+NIFTP — Néoplasme folliculaire non invasif avec caractéristiques nucléaires de type papillaire — Noninvasive follicular thyroid neoplasm with papillary-like nuclear features
+NLR — Nerf laryngé récurrent — Recurrent laryngeal nerve (RLN)
+NMTC — Cancer thyroïdien non médullaire — Non-medullary thyroid cancer
+OTC — Carcinome oncocytaire de la thyroïde — Oncocytic thyroid carcinoma
+PDTC — Carcinome thyroïdien peu différencié — Poorly differentiated thyroid carcinoma
+PHTS — Syndrome tumoral hamartomateux lié à PTEN (syndrome de Cowden) — PTEN hamartoma tumour syndrome
+PTC — Carcinome papillaire de la thyroïde — Papillary thyroid carcinoma
+RAIR — Réfractaire à l'iode radioactif — Radioiodine-refractory
+– — Réponse excellente / indéterminée / biochimique incomplète / structurale incomplète — Excellent / indeterminate / biochemical incomplete / structural incomplete response
+RFA — Ablation par radiofréquence — Radiofrequency ablation
+rhTSH — TSH recombinante humaine (Thyrogen®) — Recombinant human TSH
+RTE / EBRT — Radiothérapie externe — External beam radiation therapy
+SPM — Second cancer primitif — Second primary malignancy
+Tg / TgAb — Thyroglobuline / anticorps anti-thyroglobuline — Thyroglobulin / thyroglobulin antibodies
+– — Tg stimulée / non stimulée — Stimulated / unstimulated thyroglobulin
+TGDCa — Carcinome du canal thyréoglosse — Thyroglossal duct carcinoma
+– — Temps de doublement (calcitonine, ACE) — Doubling time
+– — Totalisation (thyroïdectomie de totalisation) — Completion thyroidectomy
+TT / TTX — Thyroïdectomie totale — Total thyroidectomy
+UMP — Tumeur à potentiel de malignité incertain — Tumour of uncertain malignant potential
+WBS — Scintigraphie corps entier — Whole-body scan
+
+--- Cancer médullaire / RET ---
+ATA-HST / ATA-H / ATA-MOD — Catégories de risque RET : le plus élevé / élevé / modéré — Highest / high / moderate risk RET categories
+CMT / MTC — Cancer médullaire de la thyroïde — Medullary thyroid carcinoma
+HPTH — Hyperparathyroïdie (dans la NEM2) — Hyperparathyroidism
+– — Maladie de Hirschsprung — Hirschsprung disease
+RET — Proto-oncogène RET (REarranged during Transfection) — RET proto-oncogene
+– — Thyroïdectomie prophylactique — Prophylactic thyroidectomy
+
+
+==================================================================
+5. SURRÉNALES (CORTISOL, ALDOSTÉRONE, CATÉCHOLAMINES)
+==================================================================
+17-OHP — 17-hydroxyprogestérone — 17-hydroxyprogesterone
+ACTH — Hormone corticotrope (corticotrophine) — Adrenocorticotropic hormone (corticotropin)
+– — Cathétérisme des sinus pétreux inférieurs — Inferior petrosal sinus sampling (IPSS)
+CBG — Transcortine (globuline liant le cortisol) — Cortisol-binding globulin
+CLU — Cortisol libre urinaire des 24 h — 24-h urinary free cortisol (UFC)
+– — Corticosurrénalome (carcinome corticosurrénalien) — Adrenocortical carcinoma (ACC)
+– — Cortisol salivaire de fin de soirée (minuit) — Late-night salivary cortisol (LNSC)
+CRH — Corticolibérine — Corticotropin-releasing hormone
+– — Crise surrénalienne (insuffisance surrénale aiguë) — Adrenal crisis
+DHEA-S — Sulfate de déhydroépiandrostérone — Dehydroepiandrosterone sulfate
+DS — Densité spontanée (sans injection) — Unenhanced attenuation (HU)
+DXM — Dexaméthasone ; test de freinage « minute » (1 mg) — Dexamethasone; 1-mg overnight dexamethasone suppression test (DST)
+– — Ectopie (sécrétion ectopique d'ACTH) — Ectopic ACTH syndrome
+HCS — Hyperplasie congénitale des surrénales — Congenital adrenal hyperplasia (CAH)
+– — Hydrocortisone (doses de stress) — Hydrocortisone (stress dosing)
+– — Incidentalome surrénalien — Adrenal incidentaloma
+– — Insuffisance surrénale (centrale / périphérique) — (Central / primary) adrenal insufficiency
+MACS / SAC / ACS — Sécrétion autonome (modérée) de cortisol — Mild autonomous cortisol secretion
+– — Maladie de Cushing (origine hypophysaire) — Cushing's disease
+– — Métyrapone, kétoconazole, osilodrostat (inhibiteurs de la stéroïdogenèse) — Steroidogenesis inhibitors
+– — Mitotane — Mitotane
+– — Profil multistéroïdien (urinaire / plasmatique) — Multisteroid profiling (steroid metabolomics)
+– — Pseudo-Cushing — Pseudo-Cushing state (non-neoplastic hypercortisolism)
+SC / CS — Syndrome de Cushing — Cushing's syndrome
+– — Surrénalectomie (unilatérale / bilatérale) — (Unilateral / bilateral) adrenalectomy
+– — Test au Synacthène (ACTH 1-24) — Synacthen (cosyntropin) stimulation test
+– — Test à la desmopressine (Minirin®) — Desmopressin test
+– — Wash-out (lavage) absolu / relatif — Absolute / relative washout
+
+--- Hyperaldostéronisme ---
+ARA2 — Antagoniste des récepteurs de l'angiotensine II — Angiotensin II receptor blocker (ARB)
+ARM — Antagoniste des récepteurs minéralocorticoïdes — Mineralocorticoid receptor antagonist (MRA)
+CVS — Cathétérisme des veines surrénaliennes — Adrenal venous sampling (AVS)
+DRC / CRD — Concentration de rénine directe — Direct renin concentration (DRC)
+ENaC — Canal sodique épithélial (amiloride, triamtérène) — Epithelial sodium channel
+HAP — Hyperaldostéronisme primaire — Primary aldosteronism (PA)
+HTA — Hypertension artérielle — Hypertension
+IEC — Inhibiteur de l'enzyme de conversion — ACE inhibitor
+– — Latéralisation (HAP latéralisé / bilatéral) — Lateralization (lateralized / bilateral PA)
+PRA / ARP — Activité rénine plasmatique — Plasma renin activity (PRA)
+RAR — Rapport aldostérone / rénine — Aldosterone-to-renin ratio (ARR)
+– — Test de confirmation (charge sodée IV, captopril) — Confirmatory test (saline infusion, captopril challenge)
+
+--- Phéochromocytome / paragangliome ---
+3-MT — 3-méthoxytyramine — 3-methoxytyramine
+– — α-bloquant (préparation préopératoire ; urapidil) — Alpha-blocker (preoperative preparation)
+FDOPA — 18F-fluorodihydroxyphénylalanine (TEP) — 18F-FDOPA (PET)
+– — Crise catécholaminergique — Catecholamine crisis
+MIBG — Métaiodobenzylguanidine — Metaiodobenzylguanidine
+MN / NMN — Métanéphrine / normétanéphrine — Metanephrine / normetanephrine
+PGL — Paragangliome — Paraganglioma
+PHEO — Phéochromocytome — Phaeochromocytoma
+PPGL — Phéochromocytomes et paragangliomes — Phaeochromocytomas and paragangliomas
+SDHx (SDHA, SDHB, SDHC, SDHD) — Gènes de la succinate déshydrogénase — Succinate dehydrogenase genes
+– — Autres gènes PPGL : VHL, RET, NF1, TMEM127, MAX, FH (fumarate hydratase), EPAS1 (HIF2A), SLC25A11 — Other PPGL susceptibility genes
+
+
+==================================================================
+6. HYPOPHYSE
+==================================================================
+AIP — Gène AIP (aryl hydrocarbon receptor-interacting protein) — AIP gene
+– — Agoniste dopaminergique (cabergoline, bromocriptine) — Dopamine agonist
+– — Apoplexie hypophysaire — Pituitary apoplexy
+AS1G — Analogues de la somatostatine de 1re génération (octréotide, lanréotide) — First-generation somatostatin receptor ligands (fgSRLs)
+AVP-D — Déficit en arginine-vasopressine (ex-diabète insipide central) — Arginine vasopressin deficiency (formerly central diabetes insipidus)
+AVP-R — Résistance à l'arginine-vasopressine (ex-diabète insipide néphrogénique) — Arginine vasopressin resistance (formerly nephrogenic DI)
+– — Champ visuel — Visual field
+– — Chiasma optique — Optic chiasm
+– — Copeptine — Copeptin
+– — Craniopharyngiome — Craniopharyngioma
+– — Desmopressine (DDAVP) — Desmopressin
+– — Effet crochet — Hook effect
+FSH — Hormone folliculo-stimulante — Follicle-stimulating hormone
+GH — Hormone de croissance (somatotrophine) — Growth hormone
+GHRH — Somatocrinine — Growth hormone-releasing hormone
+HPO / HGPO — Hyperglycémie provoquée par voie orale (freinage de la GH) — Oral glucose tolerance test (OGTT)
+HTIC — Hypertension intracrânienne — Intracranial hypertension
+– — Hypogonadisme hypogonadotrope — Hypogonadotropic hypogonadism
+– — Hypophysite — Hypophysitis
+– — Hypopituitarisme / panhypopituitarisme — Hypopituitarism / panhypopituitarism
+IGF-I / IGF-1 — Facteur de croissance insulinomimétique de type 1 — Insulin-like growth factor 1
+ITT — Test d'hypoglycémie insulinique — Insulin tolerance test
+– — Incidentalome hypophysaire — Pituitary incidentaloma
+– — Kyste arachnoïdien — Arachnoid cyst
+– — Kyste de la poche de Rathke — Rathke cleft cyst (RCC)
+– — Classification de Knosp (envahissement du sinus caverneux) — Knosp grade (cavernous sinus invasion)
+– — Classification de Trouillas (clinico-pathologique) — Trouillas classification
+LH — Hormone lutéinisante — Luteinizing hormone
+– — Macroadénome (≥ 10 mm) / microadénome (< 10 mm) — Macroadenoma / microadenoma
+– — Macroprolactine — Macroprolactin
+– — Nadir de GH — GH nadir
+NFPA — Adénome hypophysaire non fonctionnel — Non-functioning pituitary adenoma
+– — Pasiréotide — Pasireotide
+– — Pegvisomant (antagoniste du récepteur de la GH) — Pegvisomant (GH receptor antagonist)
+PIT1 (POU1F1), PROP1 — Facteurs de transcription hypophysaires — Pituitary transcription factors
+PRL — Prolactine — Prolactin
+– — Prolactinome (micro / macro) — Prolactinoma
+PTCOE — Centre d'excellence des tumeurs hypophysaires — Pituitary Tumour Centre of Excellence
+– — Selle turcique vide (partielle / totale) — (Partial / total) empty sella
+SHBG — Protéine de liaison des hormones sexuelles — Sex hormone-binding globulin
+TBI — Traumatisme crânien — Traumatic brain injury
+– — Testostérone libre — Free testosterone
+X-LAG — Acrogigantisme lié à l'X — X-linked acrogigantism
+
+
+==================================================================
+7. CALCIUM, PARATHYROÏDES, OS
+==================================================================
+– — Calcimimétique (cinacalcet) — Calcimimetic
+– — Calcium corrigé (albumine) / ionisé — Albumin-corrected / ionized calcium
+CASR, GNA11, AP2S1 — Gènes de l'HHF (récepteur sensible au calcium…) — FHH genes (calcium-sensing receptor…)
+CCCR — Rapport des clairances calcium/créatinine — Calcium-to-creatinine clearance ratio
+CDC73, GCM2, CDKN1B, CYP24A1 — Gènes impliqués dans les hyperparathyroïdies / hypercalcémies — Genes involved in hyperparathyroidism / hypercalcaemia
+CP — Carcinome parathyroïdien — Parathyroid carcinoma
+– — Crise aiguë hypercalcémique — Hypercalcaemic crisis
+FeCa — Fraction d'excrétion du calcium — Fractional excretion of calcium
+HHF / FHH — Hypercalcémie hypocalciurique familiale — Familial hypocalciuric hypercalcaemia
+HPT1 / pHPT — Hyperparathyroïdie primaire — Primary hyperparathyroidism (PHPT)
+– — Hypoparathyroïdie — Hypoparathyroidism
+MIBI — Scintigraphie au sestamibi — Sestamibi scintigraphy
+– — Os avide (syndrome de l') — Hungry bone syndrome
+PTH — Parathormone — Parathyroid hormone
+PTHrP — Peptide apparenté à la PTH — PTH-related peptide
+SPTX — Parathyroïdectomie subtotale — Subtotal parathyroidectomy
+– — T-score / Z-score — T-score / Z-score
+– — TEP à la fluorocholine — 18F-fluorocholine PET
+– — TDM 4D (scanner quadriphasique) — 4D-CT
+TPA — Tumeur parathyroïdienne atypique — Atypical parathyroid tumour
+
+
+==================================================================
+8. TUMEURS NEUROENDOCRINES (DIGESTIVES, PULMONAIRES, THYMIQUES) ET NEM
+==================================================================
+5-HIAA — Acide 5-hydroxyindolacétique — 5-hydroxyindoleacetic acid
+AC — Carcinoïde atypique — Atypical carcinoid
+– — Analogues de la somatostatine (lanréotide Autogel®, octréotide LP) — Somatostatin analogues (SSA)
+– — Cardiopathie carcinoïde — Carcinoid heart disease
+CEIAH — Chimioembolisation intra-artérielle hépatique — Transarterial chemoembolization (TACE)
+CgA — Chromogranine A — Chromogranin A
+CNE / NEC — Carcinome neuroendocrine (peu différencié) — Neuroendocrine carcinoma (poorly differentiated)
+– — Crise carcinoïde — Carcinoid crisis
+DIPNECH — Hyperplasie diffuse idiopathique des cellules neuroendocrines pulmonaires — Diffuse idiopathic pulmonary neuroendocrine cell hyperplasia
+EIAH — Embolisation intra-artérielle hépatique — (Bland) transarterial embolization (TAE)
+EMR — Mucosectomie endoscopique — Endoscopic mucosal resection
+ESD — Dissection sous-muqueuse endoscopique — Endoscopic submucosal dissection
+– — Évérolimus (inhibiteur de mTOR) — Everolimus (mTOR inhibitor)
+FOLFIRI / FOLFOX / LV5FU2 — Protocoles de chimiothérapie à base de 5-FU (+ irinotécan / + oxaliplatine) — 5-FU-based chemotherapy regimens
+FTRD — Résection endoscopique transpariétale — Full-thickness resection device
+G1 / G2 / G3 — Grades histologiques OMS (selon Ki-67 / mitoses) — WHO histological grades
+– — Gastrinome, insulinome, glucagonome, VIPome, somatostatinome — Gastrinoma, insulinoma, glucagonoma, VIPoma, somatostatinoma
+GI-NEC (score) — Score pronostique des carcinomes neuroendocrines digestifs — GI-NEC prognostic score
+IFN-α — Interféron alpha — Interferon alpha
+– — Index mitotique (mitoses / 2 mm²) — Mitotic count (per 2 mm²)
+Ki-67 — Index de prolifération Ki-67 — Ki-67 proliferation index
+LC — Carcinoïde pulmonaire — Lung carcinoid
+LCNEC — Carcinome neuroendocrine à grandes cellules — Large cell neuroendocrine carcinoma
+– — Masaoka-Koga (classification) — Masaoka–Koga staging (thymic tumours)
+MGMT (MGMTd) — O6-méthylguanine-ADN méthyltransférase (déficiente) — O6-methylguanine-DNA methyltransferase (deficient)
+NNE / NEN — Néoplasie neuroendocrine — Neuroendocrine neoplasm
+OMS / WHO — Organisation mondiale de la santé — World Health Organization
+PRRT / RIV — Radiothérapie interne vectorisée (177Lu-DOTATATE) — Peptide receptor radionuclide therapy
+R0 / R1 / R2 — Résection complète / microscopiquement / macroscopiquement incomplète — Complete / microscopically / macroscopically incomplete resection
+RECIST — Critères d'évaluation de la réponse des tumeurs solides — Response Evaluation Criteria in Solid Tumours
+SCLC / CPC — Cancer bronchique à petites cellules — Small cell lung cancer
+SG / OS — Survie globale — Overall survival
+SRI — Imagerie des récepteurs de la somatostatine — Somatostatin receptor imaging
+SSA — Analogues de la somatostatine — Somatostatin analogues
+SSP / PFS — Survie sans progression — Progression-free survival
+SST / SSTR — Somatostatine / récepteurs de la somatostatine — Somatostatin / somatostatin receptors
+– — Streptozotocine, témozolomide (± capécitabine), dacarbazine — Streptozotocin, temozolomide (± capecitabine), dacarbazine
+– — Sunitinib, cabozantinib (inhibiteurs de tyrosine kinase) — Sunitinib, cabozantinib (TKIs)
+– — Syndrome carcinoïde — Carcinoid syndrome
+SZE / ZES — Syndrome de Zollinger-Ellison — Zollinger–Ellison syndrome
+TC — Carcinoïde typique — Typical carcinoid
+TEP-DOTA (68Ga-DOTATOC / DOTATATE) — TEP aux analogues de la somatostatine — Somatostatin receptor PET (68Ga-DOTA-peptide PET)
+ThC — Carcinoïde thymique — Thymic carcinoid
+TNE / NET — Tumeur neuroendocrine (bien différenciée) — (Well-differentiated) neuroendocrine tumour
+TNEP / pNET — Tumeur neuroendocrine pancréatique — Pancreatic neuroendocrine tumour
+TNM — Classification Tumeur-Ganglions-Métastases (UICC / AJCC) — Tumour–Node–Metastasis staging
+– — Tumorlet — Tumorlet
+– — TNE gastriques de type 1 / 2 / 3 — Type 1 / 2 / 3 gastric NETs
+
+--- Prédispositions génétiques ---
+– — Dépistage en cascade (apparentés) — Cascade (family) screening
+MEN4 / NEM4 — Néoplasie endocrinienne multiple de type 4 (CDKN1B) — Multiple endocrine neoplasia type 4
+NEM1 / MEN1 — Néoplasie endocrinienne multiple de type 1 (gène de la ménine) — Multiple endocrine neoplasia type 1 (menin gene)
+NEM2A / NEM2B (MEN2A / MEN2B) — Néoplasie endocrinienne multiple de type 2A / 2B — Multiple endocrine neoplasia type 2A / 2B
+NF1 — Neurofibromatose de type 1 — Neurofibromatosis type 1
+– — Thymectomie prophylactique — Prophylactic thymectomy
+VHL — Maladie de von Hippel-Lindau — Von Hippel–Lindau disease
+
+
+==================================================================
+9. DIABÈTE
+==================================================================
+ACD / DKA — Acidocétose diabétique — Diabetic ketoacidosis
+– — Acidocétose euglycémique — Euglycaemic diabetic ketoacidosis
+ADO — Antidiabétiques oraux — Oral glucose-lowering drugs
+AR GIP/GLP-1 — Double agoniste des récepteurs du GIP et du GLP-1 (tirzépatide) — Dual GIP/GLP-1 receptor agonist
+AR GLP-1 — Agoniste des récepteurs du GLP-1 — GLP-1 receptor agonist (GLP-1 RA)
+ASG — Autosurveillance glycémique — Self-monitoring of blood glucose (SMBG)
+BOHB / β-OHB — β-hydroxybutyrate (cétonémie) — Beta-hydroxybutyrate (blood ketones)
+– — Cétonémie / cétonurie — Ketonaemia / ketonuria
+DT1 / T1D — Diabète de type 1 — Type 1 diabetes
+– — DT1 préclinique (stades 1, 2) / clinique (stade 3) — Presymptomatic (stages 1, 2) / clinical (stage 3) type 1 diabetes
+DT2 / T2D — Diabète de type 2 — Type 2 diabetes
+– — Diabète gestationnel — Gestational diabetes mellitus
+EHH / HHS — État hyperglycémique hyperosmolaire — Hyperglycaemic hyperosmolar state
+GAD (GAD65) — Anticorps anti-décarboxylase de l'acide glutamique — Glutamic acid decarboxylase antibodies
+GAJ — Glycémie à jeun — Fasting plasma glucose (FPG)
+GCK — Glucokinase (MODY-GCK / MODY 2) — Glucokinase
+GIP — Polypeptide insulinotrope dépendant du glucose — Glucose-dependent insulinotropic polypeptide
+GLP-1 — Peptide apparenté au glucagon de type 1 — Glucagon-like peptide-1
+HbA1c — Hémoglobine glyquée — Glycated haemoglobin (HbA1c)
+HGPO — Hyperglycémie provoquée par voie orale — Oral glucose tolerance test (OGTT)
+HLA DQ2 / DQ8 — Haplotypes HLA de susceptibilité — HLA susceptibility haplotypes
+HNF1A / HNF4A / HNF1B — Facteurs nucléaires hépatocytaires (MODY 3 / 1 / 5) — Hepatocyte nuclear factors
+IA-2 — Anticorps anti-tyrosine phosphatase IA-2 — Insulinoma-associated antigen-2 antibodies
+IAA — Auto-anticorps anti-insuline — Insulin autoantibodies
+IASP — Programme de standardisation des auto-anticorps d'îlots — Islet Autoantibody Standardization Program
+iDPP-4 — Inhibiteur de la dipeptidyl peptidase-4 — DPP-4 inhibitor
+– — Insulinothérapie basale / basale-bolus — Basal / basal-bolus insulin therapy
+iSGLT2 — Inhibiteur du cotransporteur sodium-glucose de type 2 — SGLT2 inhibitor
+K-ATP — Canal potassique ATP-dépendant — ATP-sensitive potassium channel
+MCG / CGM — Mesure continue du glucose — Continuous glucose monitoring
+MHD — Mesures hygiéno-diététiques — Lifestyle (diet and physical activity) measures
+MODY — Diabète de type adulte de survenue chez le jeune (diabète monogénique) — Maturity-onset diabetes of the young
+– — Osmolalité efficace — Effective osmolality
+RA — Réserve alcaline (bicarbonates) — Serum bicarbonate
+SU — Sulfamides hypoglycémiants (sulfonylurées) — Sulfonylureas
+TAR / TBR / TIR — Temps au-dessus / en dessous / dans la cible glycémique — Time above / below / in range
+TATR — Temps au-dessus de 140 mg/dL — Time above tight range (> 140 mg/dL)
+TDD — Dose totale quotidienne d'insuline — Total daily (insulin) dose
+– — Teplizumab (anti-CD3) — Teplizumab
+– — Trou anionique — Anion gap
+ZnT8 — Anticorps anti-transporteur du zinc 8 — Zinc transporter 8 antibodies
+
+--- Complications, comorbidités, organisation des soins ---
+DFG / DFGe — Débit de filtration glomérulaire (estimé) — (Estimated) glomerular filtration rate (eGFR)
+FE (réduite / préservée) — Fraction d'éjection — (Reduced / preserved) ejection fraction (HFrEF / HFpEF)
+FIB-4 — Score de fibrose hépatique FIB-4 — Fibrosis-4 index
+G1–G5 / A1–A3 — Stades de DFG / d'albuminurie (KDIGO) — GFR / albuminuria categories
+IC — Insuffisance cardiaque — Heart failure (HF)
+IDE — Infirmier(ère) diplômé(e) d'État — Registered nurse (RN)
+IPA — Infirmier(ère) en pratique avancée — Advanced practice nurse
+IRC — Insuffisance rénale chronique — Chronic kidney failure
+IRT — Insuffisance rénale terminale — End-stage kidney disease (ESKD)
+MASLD — Maladie stéatosique du foie associée à une dysfonction métabolique — Metabolic dysfunction-associated steatotic liver disease
+MASH — Stéatohépatite associée à une dysfonction métabolique — Metabolic dysfunction-associated steatohepatitis
+NAFLD — Stéatopathie métabolique (ancienne dénomination) — Non-alcoholic fatty liver disease
+MRC — Maladie rénale chronique — Chronic kidney disease (CKD)
+– — Pied diabétique — Diabetic foot
+PVD — Personne vivant avec un diabète — Person living with diabetes
+RAC — Rapport albuminurie / créatininurie — Urine albumin-to-creatinine ratio (UACR)
+SAOS — Syndrome d'apnées obstructives du sommeil — Obstructive sleep apnoea
+PPC — Pression positive continue — Continuous positive airway pressure (CPAP)
+
+--- Vaccination ---
+BCG — Bacille de Calmette et Guérin — Bacillus Calmette–Guérin
+dTP / DTPolio — Diphtérie, tétanos, poliomyélite — Diphtheria, tetanus, polio
+ROR — Rougeole, oreillons, rubéole — Measles, mumps, rubella (MMR)
+VPC13 / VPC20 / VPC21 — Vaccin pneumococcique conjugué 13 / 20 / 21-valent — 13 / 20 / 21-valent pneumococcal conjugate vaccine (PCV)
+VPP23 — Vaccin pneumococcique polyosidique 23-valent — 23-valent pneumococcal polysaccharide vaccine (PPSV23)
+VRS — Virus respiratoire syncytial — Respiratory syncytial virus (RSV)
+– — Zona (vaccin recombinant adjuvanté Shingrix®) — Herpes zoster (recombinant zoster vaccine)
+
+
+==================================================================
+10. LIPIDES ET RISQUE CARDIOVASCULAIRE
+==================================================================
+– — Acide bempédoïque — Bempedoic acid
+AOMI — Artériopathie oblitérante des membres inférieurs — Peripheral artery disease (PAD)
+apoB — Apolipoprotéine B — Apolipoprotein B
+ASCVD — Maladie cardiovasculaire athéroscléreuse — Atherosclerotic cardiovascular disease
+AVC — Accident vasculaire cérébral — Stroke
+CAC — Score calcique coronaire (Agatston) — Coronary artery calcium score
+CAD — Coronaropathie — Coronary artery disease
+– — Coroscanner (angioscanner coronaire) — Coronary CT angiography (CCTA)
+DLCN — Score du Dutch Lipid Clinic Network — Dutch Lipid Clinic Network score
+EAL — Exploration d'une anomalie lipidique (bilan lipidique) — Lipid profile
+– — Ézétimibe — Ezetimibe
+FCS — Syndrome de chylomicronémie familiale — Familial chylomicronaemia syndrome
+– — Fénofibrate — Fenofibrate
+– — Formule de Friedewald — Friedewald equation
+FRCV — Facteurs de risque cardiovasculaire — Cardiovascular risk factors
+HDL-c — Cholestérol HDL — HDL cholesterol
+HF / FH — Hypercholestérolémie familiale — Familial hypercholesterolaemia
+HTG — Hypertriglycéridémie — Hypertriglyceridaemia
+IDM — Infarctus du myocarde — Myocardial infarction (MI)
+IMC — Indice de masse corporelle — Body mass index (BMI)
+IPE — Icosapent éthyl — Icosapent ethyl
+iPCSK9 — Inhibiteur de la PCSK9 — PCSK9 inhibitor
+LDL-c — Cholestérol LDL — LDL cholesterol
+Lp(a) — Lipoprotéine (a) — Lipoprotein(a)
+MCS — Syndrome de chylomicronémie multifactorielle — Multifactorial chylomicronaemia syndrome
+MESA (percentile) — Percentile du score calcique (cohorte MESA) — MESA CAC percentile
+non-HDL-c — Cholestérol non-HDL — Non-HDL cholesterol
+SCORE2 / SCORE2-OP / SCORE2-Diabetes — Estimation du risque CV à 10 ans (ESC) — Systematic COronary Risk Evaluation 2 (older persons / diabetes)
+SMI — Ischémie myocardique silencieuse — Silent myocardial ischaemia
+– — Statine (intensité faible / modérée / forte) — (Low / moderate / high-intensity) statin
+TG — Triglycérides — Triglycerides
+UA / AU — Unités Agatston — Agatston units
+
+
+==================================================================
+11. GONADES, HYPERANDROGÉNIE, SYNDROME DE TURNER
+==================================================================
+ACP — Acétate de cyprotérone — Cyproterone acetate
+– — Bicuspidie aortique — Bicuspid aortic valve
+– — Caryotype (45,X ; mosaïque ; matériel Y) — Karyotype (45,X; mosaicism; Y material)
+– — Coarctation de l'aorte — Coarctation of the aorta
+COP — Contraception œstroprogestative — Combined oral contraceptive (COC)
+– — Dissection aortique — Aortic dissection
+EE — Éthinylestradiol — Ethinyl oestradiol
+– — Hirsutisme (score de Ferriman-Gallwey) — Hirsutism (Ferriman–Gallwey score)
+– — Index aortique (diamètre aortique rapporté à la surface corporelle, mm/m²) — Aortic size index
+IOP — Insuffisance ovarienne prématurée — Premature ovarian insufficiency (POI)
+– — Maladie cœliaque — Coeliac disease
+– — Méningiome (sous progestatifs) — Meningioma
+MVTE — Maladie veineuse thromboembolique — Venous thromboembolism (VTE)
+– — Photoépilation / électrolyse — Laser hair removal / electrolysis
+SOPK — Syndrome des ovaires polykystiques — Polycystic ovary syndrome (PCOS)
+– — Spironolactone (anti-androgène) — Spironolactone (antiandrogen)
+THM — Traitement hormonal de la ménopause — Menopausal hormone therapy (MHT)
+THS — Traitement hormonal substitutif — Hormone replacement therapy (HRT)
+– — Syndrome de Turner — Turner syndrome
+
+
+==================================================================
+12. SOCIÉTÉS SAVANTES, RÉFÉRENTIELS, RÉSEAUX, INSTITUTIONS
+==================================================================
+AACE — Association américaine des endocrinologues cliniciens — American Association of Clinical Endocrinology
+ADA — Association américaine du diabète — American Diabetes Association
+AFCE — Association francophone de chirurgie endocrinienne — French-speaking Association of Endocrine Surgery
+AJCC — Comité américain conjoint sur le cancer — American Joint Committee on Cancer
+AJD — Aide aux jeunes diabétiques — French association for young people with diabetes
+ANPGM — Association nationale des praticiens de génétique moléculaire — National association of molecular genetics practitioners
+ANSM — Agence nationale de sécurité du médicament — French National Agency for Medicines and Health Products Safety
+ATA — Association américaine de la thyroïde — American Thyroid Association
+CCMR / CRMR — Centre de compétence / de référence maladies rares — Rare disease competence / reference centre
+CRAT — Centre de référence sur les agents tératogènes — French reference centre on teratogenic agents
+EASD — Association européenne pour l'étude du diabète — European Association for the Study of Diabetes
+ENDOCAN — Réseau national des cancers endocrines rares — French network for rare endocrine cancers
+ENSAT — Réseau européen pour l'étude des tumeurs surrénaliennes — European Network for the Study of Adrenal Tumours
+ES — Société d'endocrinologie (américaine) — Endocrine Society
+ESC — Société européenne de cardiologie — European Society of Cardiology
+ESE — Société européenne d'endocrinologie — European Society of Endocrinology
+ESMO — Société européenne d'oncologie médicale — European Society for Medical Oncology
+ESPGHAN — Société européenne de gastro-entérologie, hépatologie et nutrition pédiatriques — European Society for Paediatric Gastroenterology, Hepatology and Nutrition
+EUGOGO — Groupe européen sur l'orbitopathie de Graves — European Group on Graves' Orbitopathy
+FIRENDO — Filière de santé maladies rares endocriniennes — French rare endocrine diseases network
+GTE — Groupe d'étude des tumeurs endocrines — French Endocrine Tumour Study Group
+HAS — Haute Autorité de santé — French National Authority for Health
+ISPAD — Société internationale du diabète de l'enfant et de l'adolescent — International Society for Pediatric and Adolescent Diabetes
+PNDS — Protocole national de diagnostic et de soins — National diagnosis and care protocol (French rare-disease guideline)
+RENATEN — Réseau national de référence des tumeurs neuroendocrines — French national NET reference network
+SFC — Société française de cardiologie — French Society of Cardiology
+SFD — Société francophone du diabète — French-speaking Diabetes Society
+SFE — Société française d'endocrinologie — French Society of Endocrinology
+SFEDP — Société française d'endocrinologie et de diabétologie pédiatrique — French Society of Paediatric Endocrinology and Diabetology
+SFMN — Société française de médecine nucléaire — French Society of Nuclear Medicine
+SNFGE — Société nationale française de gastro-entérologie — French National Society of Gastroenterology
+TENGEN — Réseau génétique des tumeurs endocrines — Endocrine tumour genetics network
+TNCD — Thésaurus national de cancérologie digestive — French National Digestive Oncology Thesaurus
+UICC — Union internationale contre le cancer — Union for International Cancer Control
+
+
+==================================================================
+13. HOMONYMES — ABRÉVIATIONS À DOUBLE SENS DANS LES OUTILS
+==================================================================
+AC — Carcinoïde atypique (TNE pulmonaires) / anticorps (usage courant) — Atypical carcinoid / antibody (Ab)
+EE — Écho-endoscopie (TNE digestives) / éthinylestradiol (hyperandrogénie) — Endoscopic ultrasound / ethinyl oestradiol
+ETP — Éducation thérapeutique du patient / équivalent temps plein — Therapeutic patient education / full-time equivalent
+HF — Hypercholestérolémie familiale (FR) ; en anglais HF = insuffisance cardiaque — Familial hypercholesterolaemia (FH); HF = heart failure in English
+IC — Insuffisance cardiaque (FR) ; en anglais CI = intervalle de confiance — Heart failure; CI = confidence interval in English
+LC — Carcinoïde pulmonaire (lung carcinoid) / chromatographie liquide (LC-MS/MS) — Lung carcinoid / liquid chromatography
+PA — Pression artérielle (FR) ; en anglais PA = hyperaldostéronisme primaire — Blood pressure; PA = primary aldosteronism in English
+RA — Réserve alcaline (diabète) ; en anglais RA = polyarthrite rhumatoïde ou agoniste de récepteur — Serum bicarbonate; RA = receptor agonist / rheumatoid arthritis in English
+SC — Syndrome de Cushing / sous-cutané — Cushing's syndrome / subcutaneous
+SST — Somatostatine ; en anglais DST = test de freinage à la dexaméthasone — Somatostatin

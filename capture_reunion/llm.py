@@ -29,16 +29,22 @@ class LLMError(RuntimeError):
     pass
 
 
-def load_glossary(path: Optional[Path], max_lines: int = 300) -> str:
-    """Glossaire « terme = traduction », une ligne par terme (lignes # ignorées)."""
-    if not path or not Path(path).exists():
+def load_glossary(path: Optional[Path]):
+    """Glossaire (voir glossary.py pour les formats acceptés)."""
+    from .glossary import load
+
+    return load(path)
+
+
+def _glossary_block(glossary, text: str, source: str, target: str) -> str:
+    """Partie du glossaire utile pour ``text`` (tout, si c'est un simple texte)."""
+    if not glossary:
         return ""
-    lines = []
-    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            lines.append(line)
-    return "\n".join(lines[:max_lines])
+    lines = glossary if isinstance(glossary, str) else glossary.prompt_for(text, source, target)
+    if not lines:
+        return ""
+    return ("\nTerminologie à respecter (terme source = terme à employer ; les sigles entre "
+            f"parenthèses sont ceux de chaque langue) :\n{lines}")
 
 
 class LMStudio:
@@ -139,7 +145,7 @@ class LMStudio:
         texts: list[str],
         source: str,
         target: str,
-        glossary: str = "",
+        glossary=None,
         progress: Optional[Callable[[float], None]] = None,
         batch_chars: int = 3000,
     ) -> list[str]:
@@ -158,9 +164,6 @@ class LMStudio:
             "marqueurs, dans le même ordre, un paragraphe traduit par marqueur, sans aucun "
             "autre texte."
         )
-        if glossary:
-            system += f"\nGlossaire à respecter (terme = traduction) :\n{glossary}"
-
         self.last_failures = 0
         out: list[Optional[str]] = [None] * len(texts)
         batches, current, size = [], [], 0
@@ -176,7 +179,8 @@ class LMStudio:
         for n, batch in enumerate(batches):
             if any(texts[i].strip() for i in batch):
                 user = "\n\n".join(f"[{k + 1}] {texts[i]}" for k, i in enumerate(batch))
-                parsed = _parse_markers(self.chat(system, user, max_tokens=3 * len(user) // 2 + 2048))
+                prompt = system + _glossary_block(glossary, user, source, target)
+                parsed = _parse_markers(self.chat(prompt, user, max_tokens=3 * len(user) // 2 + 2048))
                 for k, i in enumerate(batch):
                     candidate = parsed.get(k + 1)
                     if candidate and not looks_untranslated(texts[i], candidate, source, target):
@@ -196,15 +200,14 @@ class LMStudio:
                 progress((n + 1) / len(batches))
         return [t or "" for t in out]
 
-    def translate_document(self, text: str, source: str, target: str, glossary: str = "") -> str:
+    def translate_document(self, text: str, source: str, target: str, glossary=None) -> str:
         """Traduit un texte mis en forme (titres « ## », listes « - ») en gardant la forme."""
         system = (
             f"Tu es traducteur médical professionnel. Traduis du {LANGUAGE_NAMES.get(source, source)} "
             f"vers le {LANGUAGE_NAMES.get(target, target)}, fidèlement, en conservant exactement la "
             "mise en forme (lignes « ## », puces « - »). Réponds uniquement par la traduction."
         )
-        if glossary:
-            system += f"\nGlossaire à respecter (terme = traduction) :\n{glossary}"
+        system += _glossary_block(glossary, text, source, target)
         return self.chat(system, text, max_tokens=2 * len(text) + 2048)
 
     # -- Résumé ----------------------------------------------------------

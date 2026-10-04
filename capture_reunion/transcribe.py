@@ -114,6 +114,7 @@ def transcribe_tracks(
     progress: Optional[Callable[[float], None]] = None,
     cancelled: Optional[Callable[[], bool]] = None,
     whisper=None,
+    hotwords: str = "",
 ) -> tuple[list[Segment], str]:
     """Transcrit chaque piste ; renvoie les passages triés par heure et la langue.
 
@@ -133,7 +134,7 @@ def transcribe_tracks(
             language=language or None,
             vad_filter=True,  # saute les silences : plus rapide, moins d'inventions
             initial_prompt=vocabulary or None,
-            hotwords=vocabulary or None,
+            hotwords=", ".join(x for x in (vocabulary, hotwords) if x) or None,
             condition_on_previous_text=False,
         )
         found: list[Segment] = []
@@ -278,8 +279,9 @@ def transcribe_session(
     use_llm: bool = True,
     llm_url: Optional[str] = None,
     llm_model: Optional[str] = None,
-    glossary: str = "",
+    glossary=None,
     llm=None,
+    theme: str = "",
 ) -> Path:
     """Transcrit l'enregistrement.
 
@@ -309,8 +311,10 @@ def transcribe_session(
         bounds[name] = (acc / total, (acc + w) / total)
         acc += w
 
+    theme_terms = glossary.section_terms(theme) if theme and glossary and not isinstance(glossary, str) else ""
     segments, lang = transcribe_tracks(session_tracks(session), model, language, vocabulary,
-                                       _stage(progress, *bounds["transcription"]), cancelled, whisper)
+                                       _stage(progress, *bounds["transcription"]), cancelled, whisper,
+                                       hotwords=theme_terms)
     srt = write_srt(segments, session.folder / TRANSCRIPT_FILE)
     paragraphs = merge_segments(segments, [t for t, _ in session.timeline if t > MIN_INTRO])
     summary = summarize([p.text for p in paragraphs], lang)

@@ -69,7 +69,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="ne pas utiliser LM Studio (traduction Argos, résumé par phrases clés)")
     tr.add_argument("--lmstudio", default="http://localhost:1234", help="adresse du serveur LM Studio")
     tr.add_argument("--modele-ia", help="modèle LM Studio à utiliser (défaut : celui qui est chargé)")
-    tr.add_argument("--glossaire", type=Path, help="fichier « terme = traduction », une ligne par terme")
+    tr.add_argument("--glossaire", type=Path,
+                    help="glossaire français ↔ anglais (défaut : celui du dossier glossaires/)")
+    tr.add_argument("--theme", default="",
+                    help="chapitre du glossaire qui aide la reconnaissance vocale (ex. « neuroendocrines »)")
     tr.add_argument("--vocabulaire", default="",
                     help="mots difficiles à reconnaître (noms, termes médicaux), séparés par des virgules")
 
@@ -127,7 +130,14 @@ def main(argv: list[str] | None = None) -> int:
         from .llm import load_glossary
         from .transcribe import transcribe_session
 
+        from .glossary import default_path
+
         session = _load_session(args.session)
+        glossary = load_glossary(args.glossaire or default_path())
+        theme = next((t for t in glossary.sections if args.theme and args.theme.lower() in t.lower()), "")
+        if args.theme and not theme:
+            print(f"Thème « {args.theme} » introuvable. Chapitres : {' | '.join(glossary.sections)}")
+            return 1
         last = [-1]
 
         def progress(p: float) -> None:
@@ -140,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
                                  language=None if args.langue == "auto" else args.langue,
                                  translate=args.traduire, use_llm=not args.sans_ia,
                                  llm_url=args.lmstudio, llm_model=args.modele_ia,
-                                 glossary=load_glossary(args.glossaire))
+                                 glossary=glossary, theme=theme)
         print(f"\nCréé : {out}")
         if session.ai.get("model"):
             print(f"Résumé rédigé par l'IA locale : {session.ai['model']}")

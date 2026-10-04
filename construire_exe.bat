@@ -9,7 +9,7 @@ if not exist .venv\Scripts\python.exe (
 .venv\Scripts\python -m pip install pyinstaller || goto erreur
 .venv\Scripts\python -m PyInstaller --noconfirm --windowed --name CaptureReunion ^
   --collect-all windows_capture --collect-all pyaudiowpatch --collect-all imageio_ffmpeg ^
-  --collect-data pptx --collect-data docx ^
+  --collect-data pptx --collect-data docx --add-data "glossaires;glossaires" ^
   --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime ^
   --collect-all av --collect-all tokenizers --collect-all sentencepiece ^
   lancer.py || goto erreur

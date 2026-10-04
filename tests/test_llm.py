@@ -19,6 +19,10 @@ from capture_reunion.session import Session, SlideRecord
 from capture_reunion.transcribe import transcribe_session
 from capture_reunion.workflow import make_pptx, make_reports
 
+from pathlib import Path
+
+GLOSSARY = Path(__file__).resolve().parent.parent / "glossaires" / "glossaire-endocrinologie-diabetologie.txt"
+
 
 def fr(text: str) -> str:
     """Fausse traduction, mais bien en français : reprend les 3 premiers mots pour les tests."""
@@ -194,11 +198,27 @@ def test_parse_markers_multiline():
     assert _parse_markers("[1] a\nsuite\n[2] b") == {1: "a suite", 2: "b"}
 
 
-def test_glossary(tmp_path):
+def test_glossary_simple_format(tmp_path):
     g = tmp_path / "glossaire.txt"
-    g.write_text("# commentaire\nNET = TNE\n\nPRRT = RIV\n", encoding="utf-8")
-    assert load_glossary(g) == "NET = TNE\nPRRT = RIV"
-    assert load_glossary(None) == ""
+    g.write_text("# commentaire\nneuroendocrine tumour = tumeur neuroendocrine\n", encoding="utf-8")
+    glossary = load_glossary(g)
+    assert len(glossary) == 1
+    assert glossary.prompt_for("Neuroendocrine tumours are slow.", "en", "fr") == \
+        "neuroendocrine tumour = tumeur neuroendocrine"
+    assert not load_glossary(None)
+
+
+def test_only_relevant_glossary_terms_are_sent(server):
+    from capture_reunion.glossary import load
+
+    glossary = load(GLOSSARY)
+    client = LMStudio(server)
+    client.translate(["Somatostatin analogues improve progression-free survival in our patients."],
+                     "en", "fr", glossary=glossary)
+    system = FakeLMStudio.calls[-1][1]
+    assert "Survie sans progression" in system and "Analogues de la somatostatine" in system
+    assert "Hémoglobine glyquée" not in system  # terme absent du passage : non envoyé
+    assert len(system) < 4000
 
 
 SCRIPT = [(0.0, 6.0, " Neuroendocrine tumours have a long course."),
@@ -309,3 +329,21 @@ def test_argos_manually_dropped_model_is_used(tmp_path):
     found = translate_mod.ensure_model("en", "fr", root=tmp_path)
     assert found.name == "translate-en_fr-1_9"
     assert not list(root.glob("*.argosmodel"))
+
+
+def test_theme_terms_reach_speech_recognition(session):
+    from capture_reunion.glossary import load
+
+    calls = []
+
+    class Spy(Whisper):
+        def transcribe(self, audio, **kwargs):
+            calls.append(kwargs)
+            return super().transcribe(audio, **kwargs)
+
+    glossary = load(GLOSSARY)
+    theme = next(t for t in glossary.sections if "neuroendocrines" in t)
+    transcribe_session(session, whisper=Spy(), use_llm=False, vocabulary="Dr Le Gall",
+                       glossary=glossary, theme=theme)
+    assert calls[0]["initial_prompt"] == "Dr Le Gall"
+    assert calls[0]["hotwords"].startswith("Dr Le Gall, ") and "Chromogranin A" in calls[0]["hotwords"]

@@ -562,9 +562,23 @@ class MainWindow(QMainWindow):
         model_row.addWidget(refresh_models)
         tl.addRow("Modèle IA", model_row)
         tl.addRow("", self.llm_status)
-        self.glossary_edit = QLineEdit(self.settings.value("glossary", ""))
-        self.glossary_edit.setPlaceholderText("Optionnel : fichier .txt, une ligne « terme = traduction »")
+        from .glossary import default_path
+
+        default_glossary = default_path()
+        saved_glossary = self.settings.value("glossary", "")
+        if not saved_glossary or not Path(saved_glossary).exists():  # ex. ancien glossaire supprimé
+            saved_glossary = str(default_glossary or "")
+        self.glossary_edit = QLineEdit(saved_glossary)
+        self.glossary_edit.setPlaceholderText("Optionnel : glossaire français ↔ anglais (.txt)")
         tl.addRow("Glossaire", self._with_browse(self.glossary_edit, "Glossaire", "Texte (*.txt)"))
+        self.theme_combo = QComboBox()
+        self.theme_combo.setToolTip(
+            "Les termes de ce chapitre du glossaire aident la reconnaissance vocale "
+            "(abréviations, molécules…). Le glossaire entier sert de toute façon à la traduction.")
+        tl.addRow("Thème de la réunion", self.theme_combo)
+        self._saved_theme = self.settings.value("theme", "")
+        self.glossary_edit.textChanged.connect(self._reload_themes)
+        self._reload_themes()
         self.vocab_edit = QLineEdit(self.settings.value("vocabulary", ""))
         self.vocab_edit.setPlaceholderText("Optionnel : noms et termes difficiles (ex. RCP, pembrolizumab, Dr Le Gall)")
         tl.addRow("Vocabulaire", self.vocab_edit)
@@ -779,13 +793,15 @@ class MainWindow(QMainWindow):
         use_llm = self.llm_check.isChecked()
         llm_url = self.llm_url.text().strip() or "http://localhost:1234"
         glossary_path = self.glossary_edit.text().strip()
+        theme = self.theme_combo.currentData() or ""
         from .llm import load_glossary
 
         try:
-            glossary = load_glossary(Path(glossary_path)) if glossary_path else ""
+            glossary = load_glossary(Path(glossary_path)) if glossary_path else None
         except OSError as exc:
             QMessageBox.warning(self, "Glossaire", f"Glossaire illisible : {exc}")
             return
+        self.settings.setValue("theme", theme)
         llm_model = self.llm_model_combo.currentData() or None
         self.settings.setValue("use_llm", use_llm)
         self.settings.setValue("llm_url", llm_url)
@@ -805,7 +821,7 @@ class MainWindow(QMainWindow):
                                                language=language, translate=translate,
                                                use_llm=use_llm, llm_url=llm_url,
                                                llm_model=llm_model,
-                                               glossary=glossary))
+                                               glossary=glossary, theme=theme))
         task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
         task.done.connect(self._transcribed, Q)
         task.failed.connect(self._task_failed, Q)
@@ -858,6 +874,20 @@ class MainWindow(QMainWindow):
         task.done.connect(done, Q)
         task.failed.connect(failed, Q)
         self._run(task)
+
+    def _reload_themes(self, *_args) -> None:
+        from .glossary import load
+
+        current = self.theme_combo.currentData() if self.theme_combo.count() else self._saved_theme
+        self.theme_combo.clear()
+        self.theme_combo.addItem("Général (aucun thème particulier)", "")
+        try:
+            sections = load(Path(self.glossary_edit.text().strip())).sections
+        except OSError:
+            sections = []
+        for section in sections:
+            self.theme_combo.addItem(section, section)
+        self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(current)))
 
     def _refresh_llm_models(self) -> None:
         from .llm import LMStudio
