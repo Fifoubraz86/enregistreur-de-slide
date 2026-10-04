@@ -20,9 +20,15 @@ from capture_reunion.transcribe import transcribe_session
 from capture_reunion.workflow import make_pptx, make_reports
 
 
+def fr(text: str) -> str:
+    """Fausse traduction, mais bien en français : reprend les 3 premiers mots pour les tests."""
+    return f"Traduction française de « {' '.join(text.split()[:3])} » pour les médecins."
+
+
 class FakeLMStudio(BaseHTTPRequestHandler):
     calls: list = []
     drop_marker = False  # simule un modèle qui « oublie » un paragraphe
+    style = "brackets"  # brackets | bold | none | english
 
     def log_message(self, *args):
         pass
@@ -53,9 +59,24 @@ class FakeLMStudio(BaseHTTPRequestHandler):
             items = re.findall(r"^\[(\d+)\] (.*)$", user, re.M)
             if FakeLMStudio.drop_marker and len(items) > 1:
                 items = items[:-1]
-            content = "<think>je réfléchis</think>\n" + "\n".join(f"[{n}] FR({t})" for n, t in items)
+            style = FakeLMStudio.style
+            if style == "bold":
+                lines = [f"**[{n}]** {fr(t)}" for n, t in items]
+            elif style == "none":
+                lines = [fr(t) for _, t in items]
+            elif style == "english":
+                lines = [f"[{n}] {t}" for n, t in items]
+            else:
+                lines = [f"[{n}] {fr(t)}" for n, t in items]
+            content = "<think>je réfléchis</think>\n```\n" + "\n\n".join(lines) + "\n```"
         elif "mise en forme" in system:
-            content = "## Sujet\n- FR(" + user.splitlines()[1] + ")"
+            if FakeLMStudio.style == "english":
+                content = user
+            elif user.lstrip().startswith("##"):
+                content = "\n".join(line if line.startswith("##") else "- " + fr(line)
+                                     for line in user.splitlines() if line.strip())
+            else:
+                content = fr(user)
         elif "Rédige un résumé structuré" in user:
             content = "## Sujet\n- TNE hépatiques\n## Messages clés\n- **Survie** prolongée"
         else:
@@ -68,6 +89,7 @@ class FakeLMStudio(BaseHTTPRequestHandler):
 def server():
     FakeLMStudio.calls = []
     FakeLMStudio.drop_marker = False
+    FakeLMStudio.style = "brackets"
     httpd = HTTPServer(("127.0.0.1", 0), FakeLMStudio)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -84,15 +106,45 @@ def test_unreachable_server_message():
         LMStudio("http://127.0.0.1:9").connect()
 
 
+TEXTS = [f"Paragraph {i} is about the liver and the tumours of our patients. " + "x" * 600
+         for i in range(5)]
+
+
 def test_translate_batches_keep_order_and_recover_lost_paragraphs(server):
     FakeLMStudio.drop_marker = True
     client = LMStudio(server)
-    texts = [f"Paragraph {i} " + "x" * 900 for i in range(5)]
-    out = client.translate(texts, "en", "fr", glossary="NET = TNE", batch_chars=2000)
-    assert out == [f"FR({t})" for t in texts]
+    out = client.translate(TEXTS, "en", "fr", glossary="NET = TNE", batch_chars=1500)
+    assert out == [fr(t) for t in TEXTS]
+    assert client.last_failures == 0
     systems = [c[1] for c in FakeLMStudio.calls]
     assert all("NET = TNE" in s for s in systems)
     assert len(FakeLMStudio.calls) > 3  # blocs + reprises unitaires
+
+
+@pytest.mark.parametrize("style", ["bold", "none"])
+def test_translate_tolerates_marker_styles(server, style):
+    """Régression : numéros en gras ou absents ne doivent pas laisser le texte en anglais."""
+    FakeLMStudio.style = style
+    client = LMStudio(server)
+    assert client.translate(TEXTS[:3], "en", "fr") == [fr(t) for t in TEXTS[:3]]
+    assert client.last_failures == 0
+
+
+def test_untranslated_output_is_reported(server):
+    FakeLMStudio.style = "english"
+    client = LMStudio(server)
+    out = client.translate(TEXTS[:2], "en", "fr")
+    assert out == TEXTS[:2] and client.last_failures == 2
+
+
+def test_looks_untranslated():
+    from capture_reunion.llm import looks_untranslated
+
+    en = "So what we also know is that the vast majority of tumours have the bulk in the liver."
+    assert looks_untranslated(en, en, "en", "fr")
+    assert looks_untranslated(en, en.upper().lower(), "en", "fr")
+    assert not looks_untranslated(en, "Nous savons aussi que la grande majorité des tumeurs sont dans le foie.",
+                                  "en", "fr")
 
 
 def test_parse_markers_multiline():
@@ -142,7 +194,8 @@ def test_full_pipeline_with_lmstudio(server, session):
     assert loaded.ai["warnings"] == []
 
     fr_txt = (session.folder / "transcription_fr.txt").read_text(encoding="utf-8")
-    assert "FR(Neuroendocrine tumours have a long course. We extend" in fr_txt
+    assert "Traduction française de « Neuroendocrine tumours have »" in fr_txt
+    assert "We extend" not in fr_txt  # le transcrit lui-même est traduit, pas seulement le résumé
     assert "IA locale google/gemma-4-26b-a4b-qat" in fr_txt and "PHRASES CLÉS" in fr_txt
     assert "<think>" not in fr_txt
 
@@ -152,7 +205,9 @@ def test_full_pipeline_with_lmstudio(server, session):
     assert "In brief: Résumé de Slide 1." in en
     assert "Messages clés" in en and "Survie prolongée" in en  # rendu des « ## » et du gras
     assert "Key sentences actually spoken" in en
-    assert "En bref : FR(Résumé de Slide 2.)" in fr and "Phrases clés réellement prononcées" in fr
+    assert "En bref : Traduction française de « Résumé de Slide »" in fr
+    assert "Phrases clés réellement prononcées" in fr
+    assert "The bulk of the tumour" not in fr
 
     pptx = make_pptx(loaded)
     notes = Presentation(str(pptx)).slides[0].notes_slide.notes_text_frame.text

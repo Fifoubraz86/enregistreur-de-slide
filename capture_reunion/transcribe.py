@@ -351,6 +351,10 @@ def transcribe_session(
         try:
             if client:
                 texts = client.translate([p.text for p in paragraphs], lang, target, glossary, stage)
+                if client.last_failures:
+                    warnings.append(
+                        f"{client.last_failures} paragraphe(s) sur {len(paragraphs)} n'ont pas pu être "
+                        "traduits par l'IA locale et sont restés dans la langue d'origine.")
                 t_sentences = client.translate(summary.sentences, lang, target, glossary)
                 t_keywords = [k.strip() for k in client.translate(
                     [", ".join(summary.keywords)], lang, target, glossary)[0].split(",") if k.strip()]

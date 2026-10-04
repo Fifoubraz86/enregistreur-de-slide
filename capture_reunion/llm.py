@@ -18,7 +18,11 @@ from typing import Callable, Optional
 DEFAULT_URL = "http://localhost:1234"
 LANGUAGE_NAMES = {"fr": "français", "en": "anglais"}
 _THINK = re.compile(r"<think>.*?</think>", re.S)
-_MARKER = re.compile(r"^\s*\[(\d+)\]\s?(.*)$")
+# Marqueurs de paragraphe tels que les modèles les recopient : [1], **[1]**, [1]:, 1. ou 1)
+_MARKER = re.compile(
+    r"^\s*[*_]*\s*(?:\[(\d+)\]|(\d+)[.)](?=\s))[*_]*\s*[:.\-–]?\s*(.*)$"
+)
+_FENCE = re.compile(r"^\s*```\w*\s*$")
 
 
 class LLMError(RuntimeError):
@@ -44,6 +48,7 @@ class LMStudio:
             self.url = self.url[:-3]
         self.model = model
         self.timeout = timeout
+        self.last_failures = 0  # paragraphes que la dernière traduction n'a pas pu traduire
 
     # -- HTTP ------------------------------------------------------------
     def _request(self, path: str, payload: Optional[dict] = None, timeout: Optional[float] = None):
@@ -127,6 +132,7 @@ class LMStudio:
         if glossary:
             system += f"\nGlossaire à respecter (terme = traduction) :\n{glossary}"
 
+        self.last_failures = 0
         out: list[Optional[str]] = [None] * len(texts)
         batches, current, size = [], [], 0
         for i, text in enumerate(texts):
@@ -141,15 +147,19 @@ class LMStudio:
         for n, batch in enumerate(batches):
             if any(texts[i].strip() for i in batch):
                 user = "\n\n".join(f"[{k + 1}] {texts[i]}" for k, i in enumerate(batch))
-                parsed = _parse_markers(self.chat(system, user, max_tokens=4 * len(user) // 3 + 512))
+                parsed = _parse_markers(self.chat(system, user, max_tokens=3 * len(user) // 2 + 2048))
                 for k, i in enumerate(batch):
-                    if parsed.get(k + 1):
-                        out[i] = parsed[k + 1]
-                # Paragraphes perdus par le modèle : on les refait un par un.
+                    candidate = parsed.get(k + 1)
+                    if candidate and not looks_untranslated(texts[i], candidate, source, target):
+                        out[i] = candidate
+                # Paragraphes perdus ou restés dans la langue d'origine : un par un, sans marqueur.
                 for i in batch:
                     if out[i] is None and texts[i].strip():
-                        single = _parse_markers(self.chat(system, f"[1] {texts[i]}"))
-                        out[i] = single.get(1) or texts[i]
+                        single = self.translate_document(texts[i], source, target, glossary)
+                        if single and not looks_untranslated(texts[i], single, source, target):
+                            out[i] = single
+                        else:
+                            self.last_failures += 1
             for i in batch:
                 if out[i] is None:
                     out[i] = texts[i]
@@ -166,7 +176,7 @@ class LMStudio:
         )
         if glossary:
             system += f"\nGlossaire à respecter (terme = traduction) :\n{glossary}"
-        return self.chat(system, text, max_tokens=2 * len(text) + 512)
+        return self.chat(system, text, max_tokens=2 * len(text) + 2048)
 
     # -- Résumé ----------------------------------------------------------
     def summarize_part(self, text: str, language: str, label: str) -> str:
@@ -202,14 +212,33 @@ class LMStudio:
         return self.chat(system, user, max_tokens=1500)
 
 
+def looks_untranslated(source_text: str, output: str, source: str, target: str) -> bool:
+    """Vrai si la « traduction » est identique à l'original ou visiblement restée
+    dans la langue d'origine (mots courants de chaque langue)."""
+    from .summarize import STOPWORDS
+
+    if output.strip().lower() == source_text.strip().lower():
+        return len(source_text.split()) > 3
+    src_only = STOPWORDS.get(source, set()) - STOPWORDS.get(target, set())
+    tgt_only = STOPWORDS.get(target, set()) - STOPWORDS.get(source, set())
+    words = re.findall(r"[a-zà-ÿ']+", output.lower())
+    if len(words) < 8 or not src_only or not tgt_only:
+        return False
+    in_source = sum(w in src_only for w in words)
+    in_target = sum(w in tgt_only for w in words)
+    return in_source > 2 * in_target
+
+
 def _parse_markers(text: str) -> dict[int, str]:
     result: dict[int, list[str]] = {}
     current: Optional[int] = None
     for line in text.splitlines():
+        if _FENCE.match(line):
+            continue
         m = _MARKER.match(line)
         if m:
-            current = int(m.group(1))
-            result[current] = [m.group(2).strip()]
+            current = int(m.group(1) or m.group(2))
+            result[current] = [m.group(3).strip()]
         elif current is not None and line.strip():
             result[current].append(line.strip())
     return {k: " ".join(v).strip() for k, v in result.items()}
