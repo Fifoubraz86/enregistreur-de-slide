@@ -96,3 +96,11 @@ def export_track(audio: Path, output: Path, delay: float = 0.0) -> None:
     pre = ["-ss", f"{delay:.3f}"] if delay > 0 else []
     run_ffmpeg([*pre, "-i", str(audio), "-ac", "1", "-ar", "16000",
                 "-c:a", "aac", "-b:a", "48k", str(output)])
+
+
+def truncate(path: Path, seconds: float) -> None:
+    """Coupe un fichier audio/vidéo après ``seconds`` secondes (sans réencodage)."""
+    path = Path(path)
+    tmp = path.with_name(path.stem + "_coupe" + path.suffix)
+    run_ffmpeg(["-i", str(path), "-t", f"{seconds:.3f}", "-map", "0", "-c", "copy", str(tmp)])
+    tmp.replace(path)

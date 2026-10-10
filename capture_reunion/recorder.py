@@ -18,6 +18,23 @@ from .session import Session, new_session_folder
 from .slides import DetectorSettings, Slide, SlideDetector
 
 FIRST_FRAME_TIMEOUT = 4.0
+ACTIVITY_INTERVAL = 2.0  # secondes entre deux vérifications d'activité de l'image
+IMAGE_CHANGE_RATIO = 0.003  # part des pixels qui doit changer pour parler d'activité
+
+
+def image_activity(previous: Optional[np.ndarray], frame: np.ndarray) -> tuple[np.ndarray, bool]:
+    """Image réduite en gris, et vrai si elle a nettement changé depuis ``previous``.
+
+    Une horloge qui avance ou un curseur qui clignote ne suffisent pas : il faut
+    qu'au moins 0,3 % de l'image change (diapo, vidéo, personne qui bouge).
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGRA2GRAY if frame.shape[2] == 4 else cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    small = cv2.resize(gray, (240, max(1, int(h * 240 / w))), interpolation=cv2.INTER_AREA)
+    if previous is None or previous.shape != small.shape:
+        return small, False
+    changed = float((cv2.absdiff(small, previous) > 25).mean())
+    return small, changed >= IMAGE_CHANGE_RATIO
 
 
 class CaptureError(RuntimeError):
@@ -143,8 +160,15 @@ class Recorder:
         on_slide_updated: Optional[Callable[[Slide], None]] = None,
         on_window_closed: Optional[Callable[[], None]] = None,
         monitor_index: Optional[int] = None,
+        auto_stop_after: Optional[float] = None,
+        idle_margin: float = 10.0,
     ) -> None:
-        """``hwnd`` : fenêtre à enregistrer, ou ``monitor_index`` (1, 2…) pour un écran entier."""
+        """``hwnd`` : fenêtre à enregistrer, ou ``monitor_index`` (1, 2…) pour un écran entier.
+
+        ``auto_stop_after`` : secondes sans activité (ni image qui change, ni son) au bout
+        desquelles ``should_auto_stop`` devient vrai ; la fin morte est alors coupée en ne
+        gardant que ``idle_margin`` secondes après la dernière activité.
+        """
         self.hwnd = hwnd
         self.monitor_index = monitor_index
         self.fps = max(1, int(fps))
@@ -180,6 +204,10 @@ class Recorder:
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self._encoder_error = ""
+        self.auto_stop_after = auto_stop_after
+        self.idle_margin = idle_margin
+        self.auto_stopped = False
+        self._last_image_activity: Optional[float] = None
 
     @property
     def folder(self) -> Path:
@@ -196,6 +224,35 @@ class Recorder:
     @property
     def slide_count(self) -> int:
         return len(self.detector.slides) if self.detector else 0
+
+    # -- activité --------------------------------------------------------
+    @property
+    def last_activity(self) -> float:
+        """Dernier instant (time.monotonic) où l'image a changé ou du son est arrivé."""
+        times = [self._t0]
+        if self._last_image_activity is not None:
+            times.append(self._last_image_activity)
+        times += [a.last_active for _, a in self._audio_tracks if getattr(a, "last_active", None)]
+        return max(times)
+
+    @property
+    def idle_seconds(self) -> float:
+        return time.monotonic() - self.last_activity if self._t0 else 0.0
+
+    @property
+    def should_auto_stop(self) -> bool:
+        return bool(self.auto_stop_after) and self.idle_seconds >= self.auto_stop_after
+
+    def audio_levels(self) -> dict[str, dict]:
+        """Par piste : niveau actuel (0-1) et secondes depuis le dernier son audible
+        (None : rien d'audible depuis le début)."""
+        now = time.monotonic()
+        out = {}
+        for name, audio in self._audio_tracks:
+            last = getattr(audio, "last_active", None)
+            out[name] = {"level": getattr(audio, "level", 0.0),
+                         "silent_for": now - last if last else None}
+        return out
 
     # -- démarrage -------------------------------------------------------
     def start(self) -> None:
@@ -238,7 +295,9 @@ class Recorder:
             self.folder / "video_temp.mp4", self._size[0], self._size[1], self.fps, self._log
         )
         self._t0 = time.monotonic()
-        self._threads = [threading.Thread(target=self._write_loop, daemon=True)]
+        self._last_image_activity = self._t0
+        self._threads = [threading.Thread(target=self._write_loop, daemon=True),
+                         threading.Thread(target=self._activity_loop, daemon=True)]
         if self.detector:
             self._threads.append(threading.Thread(target=self._detect_loop, daemon=True))
         for t in self._threads:
@@ -264,6 +323,16 @@ class Recorder:
                 break
             self._frames_written += 1
 
+    def _activity_loop(self) -> None:
+        previous = None
+        while not self._stop.wait(ACTIVITY_INTERVAL):
+            try:
+                previous, active = image_activity(previous, self._source.latest())
+            except Exception:
+                continue
+            if active:
+                self._last_image_activity = time.monotonic()
+
     def _detect_loop(self) -> None:
         interval = self.detector_settings.sample_interval
         while not self._stop.wait(interval):
@@ -275,9 +344,16 @@ class Recorder:
                 continue
 
     # -- arrêt -----------------------------------------------------------
-    def stop(self) -> Session:
-        """Arrête l'enregistrement, finalise les fichiers et renvoie la session."""
+    def stop(self, auto: bool = False) -> Session:
+        """Arrête l'enregistrement, finalise les fichiers et renvoie la session.
+
+        ``auto`` : arrêt pour inactivité ; la fin sans activité est coupée.
+        """
         stop_time = time.monotonic()
+        self.auto_stopped = auto
+        trim_to = None
+        if auto and self._t0:
+            trim_to = max(1.0, self.last_activity - self._t0 + self.idle_margin)
         self._stop.set()
         self._source.stop()
         for t in self._threads:
@@ -324,12 +400,20 @@ class Recorder:
             else:
                 raw_video.replace(video)
             self.session.video = "video.mp4"
+            if trim_to is not None and trim_to < self.session.duration - 1:
+                # Arrêt pour inactivité : on retire la fin morte.
+                for rel in [self.session.video, self.session.audio, *self.session.tracks.values()]:
+                    if rel:
+                        ffmpeg_utils.truncate(self.folder / rel, trim_to)
+                self.session.duration = round(trim_to, 2)
         except Exception as exc:
             problems.append(f"Assemblage vidéo/son impossible ({exc}). Fichiers bruts conservés.")
             self.session.video = raw_video.name if raw_video.exists() else None
 
         if self.detector:
             self.session.set_slides_from(self.detector)
+            if trim_to is not None:
+                self.session.timeline = [(t, i) for t, i in self.session.timeline if t <= trim_to]
         self.session.save()
         log = self.folder / "ffmpeg.log"
         if log.exists() and log.stat().st_size == 0:

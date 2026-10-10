@@ -50,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument("--sans-diapos", action="store_true")
     rec.add_argument("--zone", type=_zone)
     rec.add_argument("--duree", type=float, help="arrêt automatique après N minutes")
+    rec.add_argument("--arret-auto", type=float, default=3,
+                     help="arrêt après N minutes sans activité, ni image ni son (0 : jamais ; défaut 3)")
 
     ext = sub.add_parser("extraire", help="extrait les diapos d'une vidéo")
     ext.add_argument("video", type=Path, help="fichier vidéo ou dossier de session")
@@ -206,6 +208,7 @@ def _record(args) -> int:
         detect_slides=not args.sans_diapos,
         detector_settings=DetectorSettings(zone=args.zone),
         on_slide=lambda s: print(f"\nNouvelle diapo n°{s.index}"),
+        auto_stop_after=args.arret_auto * 60 if args.arret_auto else None,
     )
     recorder.start()
     if recorder.audio_warning:
@@ -221,10 +224,13 @@ def _record(args) -> int:
             if recorder.window_closed:
                 print("\nLa fenêtre a été fermée.")
                 break
+            if recorder.should_auto_stop:
+                print(f"\nAucune activité depuis {args.arret_auto:g} min : arrêt automatique.")
+                break
     except KeyboardInterrupt:
         pass
     print("\nFinalisation…")
-    session = recorder.stop()
+    session = recorder.stop(auto=recorder.should_auto_stop)
     print(f"Enregistré dans {session.folder}")
     return 0
 

@@ -13,6 +13,8 @@ import wave
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 
 class AudioRecorder:
     """Enregistre la sortie audio (``mode="loopback"``) ou le micro (``mode="micro"``)
@@ -23,6 +25,9 @@ class AudioRecorder:
     """
 
     GAP_TOLERANCE = 0.2  # secondes
+    # Niveau (RMS, 0-1) au-dessus duquel on considère qu'il y a du son : environ
+    # -50 dB pour le son de l'ordinateur, -40 dB pour le micro (bruit de fond plus fort).
+    ACTIVITY_THRESHOLD = {"loopback": 0.003, "micro": 0.01}
 
     def __init__(self, path: Path, mode: str = "loopback") -> None:
         if mode not in ("loopback", "micro"):
@@ -39,6 +44,10 @@ class AudioRecorder:
         self._rate = 48000
         self._channels = 2
         self._frame_bytes = 4
+        self.level = 0.0
+        """Niveau du dernier bloc reçu (RMS, 0 à 1)."""
+        self.last_active: Optional[float] = None
+        """Dernier instant (time.monotonic) où un son audible est arrivé."""
 
     def start(self) -> None:
         try:
@@ -100,12 +109,22 @@ class AudioRecorder:
     def _callback(self, in_data, frame_count, time_info, status):
         import pyaudiowpatch as pyaudio
 
+        now = time.monotonic()
+        self._measure(in_data, now)
         with self._lock:
             if self._wav is not None:
-                self._pad_until(time.monotonic(), frame_count)
+                self._pad_until(now, frame_count)
                 self._wav.writeframes(in_data)
                 self._written += frame_count
         return (None, pyaudio.paContinue)
+
+    def _measure(self, data: bytes, now: float) -> None:
+        samples = np.frombuffer(data, np.int16)
+        if not samples.size:
+            return
+        self.level = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2))) / 32768.0
+        if self.level >= self.ACTIVITY_THRESHOLD[self.mode]:
+            self.last_active = now
 
     def stop(self) -> None:
         stop_time = time.monotonic()

@@ -149,3 +149,60 @@ def test_recording_with_two_audio_tracks(tmp_path, monkeypatch, fast_settings):
     assert all((session.folder / f).exists() for f in session.tracks.values())
     assert not list(session.folder.glob("*_temp.wav")) and not list(session.folder.glob("*temp*"))
     assert Session.load(session.folder).tracks == session.tracks
+
+
+def test_image_activity_ignores_clock_but_sees_slide_change():
+    slide = cv2.cvtColor(make_slide(1), cv2.COLOR_BGR2BGRA)
+    small, active = rec_mod.image_activity(None, slide)
+    assert not active
+    clock = slide.copy()
+    cv2.putText(clock, "14:32", (580, 350), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0, 255), 1)
+    _, active = rec_mod.image_activity(small, clock)
+    assert not active  # une horloge qui change n'est pas une activité
+    _, active = rec_mod.image_activity(small, cv2.cvtColor(make_slide(2), cv2.COLOR_BGR2BGRA))
+    assert active
+
+
+def test_audio_level_measure():
+    from capture_reunion.audio import AudioRecorder
+
+    rec = AudioRecorder("x.wav", "loopback")
+    rec._measure(np.zeros(4800, np.int16).tobytes(), 10.0)
+    assert rec.level == 0 and rec.last_active is None
+    tone = (3000 * np.sin(np.arange(4800) / 10)).astype(np.int16)
+    rec._measure(tone.tobytes(), 11.0)
+    assert rec.level > 0.05 and rec.last_active == 11.0
+
+
+def test_auto_stop_after_inactivity_trims_dead_end(tmp_path, monkeypatch, fast_settings):
+    try:
+        find_ffmpeg()
+    except FileNotFoundError:
+        pytest.skip("ffmpeg absent")
+    monkeypatch.setattr(rec_mod, "_WindowSource", FakeSource)
+    monkeypatch.setattr(rec_mod, "ACTIVITY_INTERVAL", 0.2)
+    r = rec_mod.Recorder(1, tmp_path, fps=10, record_audio=False, detector_settings=fast_settings,
+                         auto_stop_after=3.0, idle_margin=0.5)
+    r.start()
+    deadline = time.monotonic() + 15
+    while not r.should_auto_stop and time.monotonic() < deadline:
+        time.sleep(0.1)
+    assert r.should_auto_stop
+    # Dernière activité : passage à la diapo 2 vers 2,5 s ; arrêt ~3 s plus tard.
+    assert 5.0 <= r.elapsed <= 8
+    time.sleep(1)  # la fin morte s'allonge encore un peu avant l'arrêt
+    session = r.stop(auto=True)
+    assert r.auto_stopped
+    assert 2.5 <= session.duration <= 4.0  # coupé à dernière activité + 0,5 s
+    cap = cv2.VideoCapture(str(session.video_path))
+    seconds = cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    assert abs(seconds - session.duration) < 1.0
+    assert Session.load(session.folder).duration == session.duration
+
+
+def test_no_auto_stop_when_disabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(rec_mod, "_WindowSource", FakeSource)
+    r = rec_mod.Recorder(1, tmp_path, record_audio=False, detect_slides=False)
+    r._t0 = time.monotonic() - 3600
+    assert r.idle_seconds > 3000 and not r.should_auto_stop

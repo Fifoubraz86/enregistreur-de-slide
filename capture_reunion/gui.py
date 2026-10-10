@@ -154,6 +154,15 @@ class ZoneDialog(QDialog):
         return (r.x() / w, r.y() / h, r.width() / w, r.height() / h)
 
 
+def level_bar(level: float) -> str:
+    """Niveau sonore (0-1) en barre de 8 crans, échelle en décibels (-60 à 0 dB)."""
+    import math
+
+    db = 20 * math.log10(level) if level > 0 else -100
+    filled = max(0, min(8, round((db + 60) / 60 * 8)))
+    return "■" * filled + "□" * (8 - filled)
+
+
 def zone_text(zone: Optional[Zone]) -> str:
     if not zone:
         return "Toute la fenêtre"
@@ -173,6 +182,7 @@ class MainWindow(QMainWindow):
         self.bridge.slide.connect(self._on_slide)
         self.bridge.window_closed.connect(self._on_window_closed)
         self._tasks: list[Task] = []
+        self._last_auto_stop = False
 
         tabs = QTabWidget()
         tabs.addTab(self._build_record_tab(), "1. Enregistrer")
@@ -245,6 +255,17 @@ class MainWindow(QMainWindow):
         self.fps_spin.setValue(self.settings.value("fps", 15, type=int))
         self.fps_spin.setSuffix(" images/s")
         form.addRow("Fluidité de la vidéo", self.fps_spin)
+        auto_row = QHBoxLayout()
+        self.auto_stop_check = QCheckBox("Arrêter automatiquement après")
+        self.auto_stop_check.setChecked(self.settings.value("auto_stop", True, type=bool))
+        self.auto_stop_spin = QSpinBox()
+        self.auto_stop_spin.setRange(1, 60)
+        self.auto_stop_spin.setValue(self.settings.value("auto_stop_min", 3, type=int))
+        self.auto_stop_spin.setSuffix(" min")
+        auto_row.addWidget(self.auto_stop_check)
+        auto_row.addWidget(self.auto_stop_spin)
+        auto_row.addWidget(QLabel("sans activité (ni image qui change, ni son)"), 1)
+        form.addRow("Fin de réunion", auto_row)
 
         zone_row = QHBoxLayout()
         self.zone_label = QLabel(zone_text(None))
@@ -376,12 +397,15 @@ class MainWindow(QMainWindow):
         self.settings.setValue("mic", self.mic_check.isChecked())
         self.settings.setValue("slides", self.slides_check.isChecked())
         self.settings.setValue("fps", self.fps_spin.value())
+        self.settings.setValue("auto_stop", self.auto_stop_check.isChecked())
+        self.settings.setValue("auto_stop_min", self.auto_stop_spin.value())
 
         recorder = Recorder(
             hwnd,
             Path(self.dir_edit.text()),
             window_title=selected.title,
             monitor_index=monitor_index,
+            auto_stop_after=self.auto_stop_spin.value() * 60 if self.auto_stop_check.isChecked() else None,
             fps=self.fps_spin.value(),
             record_audio=self.audio_check.isChecked(),
             record_mic=self.mic_check.isChecked(),
@@ -400,6 +424,7 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         self.recorder = recorder
+        self._last_auto_stop = False
         self.preview.setText("Dernière diapo")
         self.preview.setPixmap(QPixmap())
         self.record_btn.setText("■  Arrêter l'enregistrement")
@@ -409,18 +434,20 @@ class MainWindow(QMainWindow):
         self.timer.start(500)
         self._tick()
 
-    def stop_recording(self) -> None:
+    def stop_recording(self, auto: bool = False) -> None:
         recorder = self.recorder
         if recorder is None:
             return
         self.timer.stop()
         self.record_btn.setEnabled(False)
         self.record_btn.setText("Finalisation de la vidéo…")
-        self.status_label.setText("Finalisation (assemblage vidéo et son)…")
+        self.status_label.setText(
+            ("Arrêt automatique (aucune activité). " if auto else "")
+            + "Finalisation (assemblage vidéo et son)…")
 
         def finish():
             try:
-                return recorder.stop(), ""
+                return recorder.stop(auto=auto), ""
             except Exception as exc:
                 return recorder.session, str(exc)
 
@@ -445,7 +472,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Enregistrement", problem)
         box = QMessageBox(self)
         box.setWindowTitle("Enregistrement terminé")
-        box.setText(f"Enregistrement terminé ({len(session.slides)} diapos détectées).")
+        auto = "Arrêt automatique faute d'activité ; la fin sans activité a été coupée.\n" \
+            if session and self._last_auto_stop else ""
+        box.setText(f"{auto}Enregistrement terminé ({len(session.slides)} diapos détectées).")
         open_btn = box.addButton("Ouvrir le dossier", QMessageBox.ButtonRole.ActionRole)
         next_btn = box.addButton("Créer les diapos / compte-rendu", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("Fermer", QMessageBox.ButtonRole.RejectRole)
@@ -459,10 +488,27 @@ class MainWindow(QMainWindow):
         r = self.recorder
         if r is None:
             return
+        if r.should_auto_stop:
+            self._last_auto_stop = True
+            self.stop_recording(auto=True)
+            return
         elapsed = format_timestamp(r.elapsed)
         slides = f" — {r.slide_count} diapo(s)" if r.detector else ""
-        self.status_label.setText(f"● Enregistrement en cours : {elapsed}{slides}")
+        lines = [f"● Enregistrement en cours : {elapsed}{slides}"]
+        names = {"participants": "Son de l'ordinateur", "moi": "Micro"}
+        levels = r.audio_levels()
+        if levels:
+            lines.append("   ".join(f"{names.get(k, k)} {level_bar(v['level'])}" for k, v in levels.items()))
+        idle = r.idle_seconds
+        if idle >= 30:
+            limit = f" — arrêt automatique à {format_timestamp(r.auto_stop_after)}" if r.auto_stop_after else ""
+            lines.append(f"Aucune activité depuis {format_timestamp(idle)}{limit}")
+        self.status_label.setText("\n".join(lines))
         warnings = [r.audio_warning] if r.audio_warning else []
+        computer = levels.get("participants")
+        if computer and computer["silent_for"] is None and r.elapsed >= 30:
+            warnings.append("⚠ Aucun son de l'ordinateur reçu depuis le début : le son de la réunion "
+                            "est-il coupé (volume à 0, muet, ou volume de Zoom/Teams au minimum) ?")
         if r.hwnd is not None and is_minimized(r.hwnd):
             warnings.append("⚠ La fenêtre est réduite : l'image est figée. Rouvrez-la "
                             "(elle peut rester derrière les autres fenêtres).")
