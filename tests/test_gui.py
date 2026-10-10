@@ -77,3 +77,16 @@ def test_level_bar():
     assert gui.level_bar(0) == "□" * 8
     assert gui.level_bar(1.0) == "■" * 8
     assert gui.level_bar(0.03).count("■") == 4  # environ -30 dB
+
+
+def test_engine_choice_and_patient_switch(app):
+    w = gui.MainWindow()
+    w.engine_combo.setCurrentIndex(w.engine_combo.findData("claude"))
+    assert w.claude_model_combo.isEnabled() and not w.llm_url.isEnabled()
+    assert "Anthropic" in w.llm_status.text()
+    w.patient_check.setChecked(True)
+    assert not w.claude_model_combo.isEnabled()
+    assert w._engine_choice() == ("claude", "sonnet", False)
+    w.patient_check.setChecked(False)
+    w.engine_combo.setCurrentIndex(w.engine_combo.findData("lmstudio"))
+    assert w.llm_url.isEnabled() and not w.claude_model_combo.isEnabled()

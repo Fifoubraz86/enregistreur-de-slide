@@ -1,9 +1,12 @@
-"""IA locale via LM Studio : traduction de qualité et résumé structuré.
+"""Moteurs d'IA : traduction de qualité, résumés et lecture des diapos.
 
-LM Studio fait tourner un modèle (ex. Gemma) sur le PC et expose un serveur
-local compatible OpenAI (onglet « Developer », http://localhost:1234). Rien ne
-quitte l'ordinateur. Si LM Studio n'est pas lancé, le logiciel se rabat sur le
-traducteur Argos et sur le résumé par phrases clés.
+- ``LMStudio`` : modèle local (ex. Gemma) servi par LM Studio sur le PC
+  (onglet « Developer », http://localhost:1234). Rien ne quitte l'ordinateur.
+- ``ClaudeCode`` (claude_code.py) : Claude, via Claude Code installé sur le PC et
+  l'abonnement Claude de l'utilisateur. Le texte part chez Anthropic.
+
+Sans moteur, le logiciel se rabat sur le traducteur Argos et sur le résumé par
+phrases clés.
 """
 
 from __future__ import annotations
@@ -47,15 +50,67 @@ def _glossary_block(glossary, text: str, source: str, target: str) -> str:
             f"parenthèses sont ceux de chaque langue) :\n{lines}")
 
 
-class LMStudio:
+SLIDE_JSON_SPEC = (
+    "Pour chaque diapo, rends un objet JSON : "
+    '{"index": n, "title": "titre", "bullets": [{"text": "puce", "level": 0}], '
+    '"figures": [{"box": [x, y, largeur, hauteur], "caption": "légende"}]}. '
+    "« level » vaut 0 pour une puce principale, 1 ou 2 pour une sous-puce. "
+    "« figures » liste les graphiques, photos, schémas et tableaux à recopier comme image, "
+    "avec leur rectangle en fractions de l'image (0 à 1, origine en haut à gauche). "
+    "Recopie le texte exactement, sans le traduire ni le résumer ; ignore les logos, "
+    "numéros de page et bandeaux décoratifs."
+)
+
+
+class Engine:
+    """Base commune : tout repose sur ``chat(system, user)``."""
+
+    label = "IA"
+    batch_chars = 3000
+    online = False
+
+    def __init__(self) -> None:
+        self.model: Optional[str] = None
+        self.last_failures = 0  # paragraphes que la dernière traduction n'a pas pu traduire
+        self.needs_loading = False
+
+    @property
+    def display_name(self) -> str:
+        return self.model or self.label
+
+    def connect(self) -> str:
+        raise NotImplementedError
+
+    def chat(self, system: str, user: str, max_tokens: int = 4096, temperature: float = 0.2) -> str:
+        raise NotImplementedError
+
+    def read_slides(self, images: list[Path]) -> list[dict]:
+        raise LLMError(f"{self.label} ne sait pas lire les images.")
+
+    def summarize_all(
+        self, parts: list[tuple[str, str]], language: str, title: str = "",
+        progress: Optional[Callable[[float], None]] = None,
+    ) -> tuple[list[tuple[str, str]], str]:
+        """Résumé de chaque partie (diapo) puis résumé global : (résumés, résumé global)."""
+        summarized = []
+        for i, (label, text) in enumerate(parts):
+            summarized.append((label, self.summarize_part(text[:12000], language, label)))
+            if progress:
+                progress((i + 1) / (len(parts) + 1))
+        return summarized, self.summarize_global(summarized, language, title)
+
+
+class LMStudio(Engine):
+    label = "LM Studio"
+
     def __init__(self, url: str = DEFAULT_URL, model: Optional[str] = None, timeout: float = 900) -> None:
+        super().__init__()
         self.url = url.rstrip("/")
         if self.url.endswith("/v1"):
             self.url = self.url[:-3]
         self.model = model
         self.timeout = timeout
-        self.last_failures = 0  # paragraphes que la dernière traduction n'a pas pu traduire
-        self.needs_loading = False
+        self.vision = False
 
     # -- HTTP ------------------------------------------------------------
     def _request(self, path: str, payload: Optional[dict] = None, timeout: Optional[float] = None):
@@ -79,11 +134,12 @@ class LMStudio:
         """Modèles de langage disponibles : [{"id", "loaded"}], les chargés en premier."""
         try:  # API native : indique l'état chargé / non chargé
             data = self._request("/api/v0/models", timeout=10)["data"]
-            infos = [{"id": m["id"], "loaded": m.get("state") == "loaded"}
+            infos = [{"id": m["id"], "loaded": m.get("state") == "loaded", "vision": m.get("type") == "vlm"}
                      for m in data if m.get("type", "llm") in ("llm", "vlm")]
         except (LLMError, KeyError, TypeError):
             data = self._request("/v1/models", timeout=10).get("data", [])
-            infos = [{"id": m["id"], "loaded": None} for m in data if "embed" not in m["id"].lower()]
+            infos = [{"id": m["id"], "loaded": None, "vision": None}
+                     for m in data if "embed" not in m["id"].lower()]
         infos.sort(key=lambda m: m["loaded"] is not True)
         return infos
 
@@ -106,13 +162,15 @@ class LMStudio:
                 raise LLMError(
                     f"Le modèle « {self.model} » n'existe pas dans LM Studio. "
                     f"Modèles disponibles : {', '.join(m['id'] for m in infos)}")
-            self.needs_loading = match["loaded"] is False
         else:
-            self.model = infos[0]["id"]
-            self.needs_loading = infos[0]["loaded"] is False
+            match = infos[0]
+            self.model = match["id"]
+        self.needs_loading = match["loaded"] is False
+        self.vision = match.get("vision") is not False  # inconnu : on essaiera
         return self.model
 
-    def chat(self, system: str, user: str, max_tokens: int = 4096, temperature: float = 0.2) -> str:
+    def chat(self, system: str, user, max_tokens: int = 4096, temperature: float = 0.2) -> str:
+        """``user`` : texte, ou liste de contenus (texte + images) pour les modèles de vision."""
         if not self.model:
             self.connect()
         try:
@@ -139,6 +197,35 @@ class LMStudio:
             raise LLMError(f"Réponse inattendue de LM Studio : {str(data)[:200]}") from exc
         return _THINK.sub("", text).strip()
 
+    def read_slides(self, images: list[Path]) -> list[dict]:
+        """Lit chaque diapo avec un modèle de vision local (une requête par diapo)."""
+        import base64
+
+        if not self.model:
+            self.connect()
+        if not self.vision:
+            raise LLMError(f"Le modèle « {self.model} » ne lit pas les images.")
+        system = "Tu recopies fidèlement le contenu de diapositives. " + SLIDE_JSON_SPEC
+        out = []
+        for n, path in enumerate(images, start=1):
+            data = base64.b64encode(Path(path).read_bytes()).decode()
+            content = [
+                {"type": "text", "text": f"Diapo {n}. Réponds uniquement par l'objet JSON de cette diapo."},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data}"}},
+            ]
+            parsed = parse_json(self.chat(system, content, max_tokens=2000))
+            if isinstance(parsed, dict) and "slides" in parsed:
+                parsed = (parsed["slides"] or [None])[0]
+            if not isinstance(parsed, dict):
+                raise LLMError(f"Réponse illisible pour la diapo {n}.")
+            parsed["index"] = n
+            out.append(parsed)
+        return out
+
+
+class _Translation:
+    """Traduction et résumés, communs à tous les moteurs (mélangé dans Engine)."""
+
     # -- Traduction ------------------------------------------------------
     def translate(
         self,
@@ -147,7 +234,7 @@ class LMStudio:
         target: str,
         glossary=None,
         progress: Optional[Callable[[float], None]] = None,
-        batch_chars: int = 3000,
+        batch_chars: Optional[int] = None,
     ) -> list[str]:
         """Traduit des paragraphes en gardant leur découpage (donc leurs horodatages)."""
         system = (
@@ -164,6 +251,7 @@ class LMStudio:
             "marqueurs, dans le même ordre, un paragraphe traduit par marqueur, sans aucun "
             "autre texte."
         )
+        batch_chars = batch_chars or self.batch_chars
         self.last_failures = 0
         out: list[Optional[str]] = [None] * len(texts)
         batches, current, size = [], [], 0
@@ -242,6 +330,30 @@ class LMStudio:
             "pratiques\nOmets « Données chiffrées » s'il n'y en a pas. Sois concis et précis."
         )
         return self.chat(system, user, max_tokens=1500)
+
+
+for _name, _member in list(vars(_Translation).items()):
+    if callable(_member) and not _name.startswith("__"):
+        setattr(Engine, _name, _member)
+
+
+def parse_json(text: str):
+    """Premier objet ou tableau JSON d'une réponse (tolère ```json … ``` et du texte autour)."""
+    text = _THINK.sub("", text or "").strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
+    if fenced:
+        text = fenced.group(1).strip()
+    starts = [i for i in (text.find("{"), text.find("[")) if i >= 0]
+    if not starts:
+        return None
+    start = min(starts)
+    for end in range(len(text), start, -1):
+        if text[end - 1] in "}]":
+            try:
+                return json.loads(text[start:end])
+            except json.JSONDecodeError:
+                continue
+    return None
 
 
 def looks_untranslated(source_text: str, output: str, source: str, target: str) -> bool:

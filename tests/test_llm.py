@@ -116,8 +116,8 @@ def test_connect_prefers_loaded_llm(server):
 
 def test_model_infos_mark_loaded(server):
     infos = LMStudio(server).model_infos()
-    assert infos == [{"id": "google/gemma-4-26b-a4b-qat", "loaded": True},
-                     {"id": "qwen-autre", "loaded": False}]
+    assert infos == [{"id": "google/gemma-4-26b-a4b-qat", "loaded": True, "vision": False},
+                     {"id": "qwen-autre", "loaded": False, "vision": False}]
 
 
 def test_chosen_model_is_used_even_if_another_is_loaded(server):
@@ -253,7 +253,7 @@ def test_full_pipeline_with_lmstudio(server, session):
     assert loaded.ai["slide_summaries"]["en"] == {"1": "Résumé de Slide 1.", "2": "Résumé de Slide 2."}
     assert loaded.ai["summary"]["en"].startswith("## Sujet")
     assert loaded.ai["summary"]["fr"].startswith("## Sujet")
-    assert loaded.translations["fr"]["engine"] == "IA locale (google/gemma-4-26b-a4b-qat)"
+    assert loaded.translations["fr"]["engine"] == "google/gemma-4-26b-a4b-qat"
     assert loaded.ai["warnings"] == []
 
     fr_txt = (session.folder / "transcription_fr.txt").read_text(encoding="utf-8")
@@ -290,7 +290,7 @@ def test_without_lmstudio_falls_back_to_argos(session):
     loaded = Session.load(session.folder)
     assert loaded.translations["fr"]["engine"] == "Argos"
     assert "ARGOS(" in (session.folder / "transcription_fr.txt").read_text(encoding="utf-8")
-    assert "IA locale non utilisée" in loaded.ai["warnings"][0]
+    assert "LM Studio non utilisé" in loaded.ai["warnings"][0]
     assert "summary" not in loaded.ai
 
 

@@ -79,6 +79,12 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
     **Modèle IA** : cliquez sur **Actualiser** pour lister les modèles de LM Studio (« ● chargé » indique ceux déjà en mémoire), puis choisissez-en un. S'il n'est pas chargé, LM Studio le charge à la première demande ; il faut pour cela que le chargement à la demande (« Just-In-Time model loading ») soit activé dans l'onglet Developer. Le premier traitement attend alors une à deux minutes. Si un autre modèle occupe déjà la carte graphique, déchargez-le d'abord.
 
     Le bouton **Tester** vérifie la connexion et charge le modèle choisi. Si LM Studio n'est pas lancé, le logiciel utilise automatiquement le traducteur Argos et le résumé par phrases clés. Les phrases réellement prononcées restent toujours en annexe, pour vérifier ce que l'IA affirme.
+  - **Moteur IA** : trois choix.
+    - **LM Studio** : IA locale, rien ne quitte le PC, gratuit.
+    - **Claude — votre abonnement** : passe par Claude Code, l'outil en ligne de commande d'Anthropic, et utilise votre abonnement Claude (Pro ou Max), sans clé API. Il faut l'installer une fois (<https://claude.com/claude-code>), puis taper `claude` dans un terminal pour vous connecter. Le texte et les images partent chez Anthropic et consomment le quota de l'abonnement : le logiciel regroupe le travail en très peu d'appels, avec Sonnet par défaut, plus économe qu'Opus. Votre consommation réelle s'affiche dans Claude Code avec `/usage`.
+    - **Aucune** : traduction Argos et résumé par phrases clés.
+
+    Cochez **« Réunion avec données de patients »** pour qu'aucun texte ni aucune image ne parte en ligne : Claude est alors désactivé, même s'il est choisi.
   - **Glossaire** : le glossaire d'endocrinologie, diabétologie et TNE fourni dans `glossaires/` est utilisé par défaut. Il comporte environ 460 termes, au format `ABRÉV — Terme français — English term (ABBR)`. À chaque traduction, seuls les termes présents dans le passage sont transmis à l'IA, pluriels et orthographes britannique ou américaine compris. Le format simple `terme anglais = terme français` est aussi accepté.
   - **Thème de la réunion** : un chapitre du glossaire (ex. « Tumeurs neuroendocrines… »). Ses termes sont soufflés à la reconnaissance vocale, pour mieux reconnaître les abréviations et les noms de molécules.
   - **Vocabulaire** : mots difficiles (noms propres, molécules, sigles) pour aider la reconnaissance.
@@ -95,6 +101,11 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
 - **Transcription** : celle du logiciel est remplie automatiquement. Vous pouvez aussi choisir un export Plaud : exportez la transcription depuis l'appli Plaud **avec les horodatages** (TXT, SRT ou DOCX).
 - **Heure de début du Plaud** (export Plaud uniquement) : l'heure à laquelle vous avez lancé l'enregistrement Plaud (visible dans l'appli). Le logiciel connaît l'heure de début de la vidéo et calcule le décalage. « Ajustement fin » permet de corriger de quelques secondes.
 - **Créer le PowerPoint** : une diapo par photo. Les notes du présentateur contiennent l'heure d'affichage et, si une transcription est fournie, ce qui a été dit.
+- **PowerPoint reconstruit (texte modifiable)** : recrée de vraies diapos à partir des captures. Le titre et les puces (avec leurs niveaux) deviennent du texte modifiable, et les graphiques, photos et schémas sont découpés et placés comme images.
+  - **Masque** : celui du champ « Modèle PowerPoint », ou à défaut le masque sobre fourni (`modeles/masque_par_defaut.pptx`, modifiable dans PowerPoint).
+  - **Lecture des diapos** : par le moteur IA s'il voit les images (Claude, ou un modèle de vision dans LM Studio). Sinon par OCR sur le PC (hors ligne), qui lit bien le texte mais devine la mise en forme plus grossièrement.
+  - **Lectures mémorisées** dans `diapos_lues.json` : refaire le PowerPoint avec un autre masque ne relit pas les diapos et ne reconsomme pas de quota.
+  - Les notes de chaque diapo contiennent la transcription et le nom de la capture d'origine. Relisez toujours le résultat : une lecture automatique peut se tromper.
 - **Créer le compte-rendu Word** : chaque diapo suivie de la transcription correspondante, puis le résumé. Si une traduction existe, `compte-rendu_fr.docx` (ou `_en`) est créé en plus.
 
 ## Comment la détection des diapos fonctionne
@@ -113,6 +124,7 @@ Une image est analysée chaque seconde :
 .venv\Scripts\python -m capture_reunion enregistrer Zoom --zone 0,0,0.8,1
 .venv\Scripts\python -m capture_reunion enregistrer ecran1 --arret-auto 5
 .venv\Scripts\python -m capture_reunion extraire "chemin\video.mp4"
+.venv\Scripts\python -m capture_reunion reconstruire "dossier de session" --moteur claude --modele masque.potx
 .venv\Scripts\python -m capture_reunion transcrire "dossier de session" --modele medium --traduire --theme neuroendocrines --vocabulaire "RCP, pembrolizumab"
 .venv\Scripts\python -m capture_reunion pptx "dossier de session" --modele modele.potx --transcription plaud.txt --debut-plaud 14:29:50
 .venv\Scripts\python -m capture_reunion compte-rendu "dossier de session" --transcription plaud.txt --debut-plaud 14:29:50
@@ -124,5 +136,5 @@ Prévenez les participants avant d'enregistrer (RGPD). En RCP, les données de s
 
 ## Pour les développeurs
 
-- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (lecture des transcriptions), `transcribe.py` (transcription locale faster-whisper), `summarize.py` (résumé TextRank), `translate.py` (traduction hors ligne CTranslate2 + modèles Argos), `llm.py` (IA locale via le serveur LM Studio), `gui.py` (PySide6).
+- Code dans `capture_reunion/` : `recorder.py` (capture Windows Graphics Capture + ffmpeg), `audio.py` (WASAPI loopback), `slides.py` (détection), `export.py` (PowerPoint/Word), `transcript.py` (lecture des transcriptions), `transcribe.py` (transcription locale faster-whisper), `summarize.py` (résumé TextRank), `translate.py` (traduction hors ligne CTranslate2 + modèles Argos), `llm.py` (moteurs IA, LM Studio), `claude_code.py` (Claude via Claude Code), `rebuild.py` (reconstruction des diapos : lecture IA/OCR, figures, masque), `gui.py` (PySide6).
 - Tests : `python -m pytest`. Ils tournent aussi hors Windows : la capture est simulée par une fausse fenêtre.

@@ -9,3 +9,4 @@ windows-capture>=2.0; sys_platform == "win32"
 pyaudiowpatch>=0.2.12; sys_platform == "win32"
 faster-whisper>=1.1
 sentencepiece>=0.2
+rapidocr_onnxruntime>=1.2

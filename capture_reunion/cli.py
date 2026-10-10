@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     tr.add_argument("--traduire", action="store_true",
                     help="crée aussi une version traduite (anglais ↔ français)")
     tr.add_argument("--sans-ia", action="store_true",
-                    help="ne pas utiliser LM Studio (traduction Argos, résumé par phrases clés)")
+                    help="aucune IA (traduction Argos, résumé par phrases clés)")
     tr.add_argument("--lmstudio", default="http://localhost:1234", help="adresse du serveur LM Studio")
     tr.add_argument("--modele-ia", help="modèle LM Studio à utiliser (défaut : celui qui est chargé)")
     tr.add_argument("--glossaire", type=Path,
@@ -77,6 +77,17 @@ def main(argv: list[str] | None = None) -> int:
                     help="chapitre du glossaire qui aide la reconnaissance vocale (ex. « neuroendocrines »)")
     tr.add_argument("--vocabulaire", default="",
                     help="mots difficiles à reconnaître (noms, termes médicaux), séparés par des virgules")
+
+    rb = sub.add_parser("reconstruire",
+                        help="PowerPoint reconstruit : texte modifiable et figures, dans un masque")
+    rb.add_argument("session", type=Path, help="dossier de session")
+    rb.add_argument("--modele", type=Path, help="masque .potx / .pptx (défaut : masque fourni)")
+    for p_ in (tr, rb):
+        p_.add_argument("--moteur", choices=["lmstudio", "claude", "aucun"], default="lmstudio",
+                        help="IA : LM Studio (local), Claude (abonnement via Claude Code) ou aucune")
+        p_.add_argument("--modele-claude", default="sonnet", choices=["sonnet", "opus", "haiku"])
+        p_.add_argument("--donnees-patients", action="store_true",
+                        help="réunion avec données de patients : rien n'est envoyé en ligne")
 
     for name, help_text in (
         ("pptx", "crée le PowerPoint des diapos"),
@@ -150,7 +161,10 @@ def main(argv: list[str] | None = None) -> int:
 
         out = transcribe_session(session, args.modele, args.vocabulaire, progress,
                                  language=None if args.langue == "auto" else args.langue,
-                                 translate=args.traduire, use_llm=not args.sans_ia,
+                                 translate=args.traduire,
+                                 engine="aucun" if args.sans_ia else args.moteur,
+                                 claude_model=args.modele_claude,
+                                 allow_online=not args.donnees_patients,
                                  llm_url=args.lmstudio, llm_model=args.modele_ia,
                                  glossary=glossary, theme=theme)
         print(f"\nCréé : {out}")
@@ -158,6 +172,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Résumé rédigé par l'IA locale : {session.ai['model']}")
         for warning in session.ai.get("warnings", []):
             print(f"Attention : {warning}")
+        return 0
+
+    if args.cmd == "reconstruire":
+        from .workflow import rebuild_presentation
+
+        session = _load_session(args.session)
+        out, warnings = rebuild_presentation(
+            session, args.modele, args.moteur, args.modele_claude, not args.donnees_patients)
+        for warning in warnings:
+            print(f"Attention : {warning}")
+        print(f"Créé : {out}")
         return 0
 
     from .workflow import compute_offset, make_pptx, make_reports

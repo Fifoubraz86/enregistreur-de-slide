@@ -189,7 +189,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_after_tab(), "2. Diapos et compte-rendu")
         self.tabs = tabs
         self.setCentralWidget(tabs)
-        self.resize(780, 880)
+        self.resize(800, 960)
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -563,7 +563,7 @@ class MainWindow(QMainWindow):
         el.addWidget(self.progress)
         layout.addWidget(ext_box)
 
-        tr_box = QGroupBox("Transcription sur ce PC (sans Plaud, rien n'est envoyé sur Internet)")
+        tr_box = QGroupBox("Transcription (sur ce PC, sans Plaud) et IA pour traduire et résumer")
         tl = QFormLayout(tr_box)
         from .transcribe import DEFAULT_MODEL, MODELS
 
@@ -582,10 +582,29 @@ class MainWindow(QMainWindow):
             "Créer aussi une version traduite (anglais → français, ou français → anglais)")
         self.translate_check.setChecked(self.settings.value("translate", True, type=bool))
         tl.addRow(self.translate_check)
-        self.llm_check = QCheckBox(
-            "Utiliser l'IA locale LM Studio, si elle est lancée (traduction soignée, résumé rédigé)")
-        self.llm_check.setChecked(self.settings.value("use_llm", True, type=bool))
-        tl.addRow(self.llm_check)
+        from .claude_code import DEFAULT_MODEL as CLAUDE_DEFAULT, MODELS as CLAUDE_MODELS
+
+        engine_row = QHBoxLayout()
+        self.engine_combo = QComboBox()
+        for label, code in (("LM Studio — IA locale, rien ne quitte le PC", "lmstudio"),
+                            ("Claude — votre abonnement, via Claude Code (en ligne)", "claude"),
+                            ("Aucune IA (traduction Argos, phrases clés)", "aucun")):
+            self.engine_combo.addItem(label, code)
+        default_engine = "lmstudio" if self.settings.value("use_llm", True, type=bool) else "aucun"
+        self.engine_combo.setCurrentIndex(
+            max(0, self.engine_combo.findData(self.settings.value("engine", default_engine))))
+        self.claude_model_combo = QComboBox()
+        for label, code in CLAUDE_MODELS.items():
+            self.claude_model_combo.addItem(label, code)
+        self.claude_model_combo.setCurrentIndex(max(0, self.claude_model_combo.findData(
+            self.settings.value("claude_model", CLAUDE_DEFAULT))))
+        engine_row.addWidget(self.engine_combo, 2)
+        engine_row.addWidget(self.claude_model_combo, 1)
+        tl.addRow("Moteur IA", engine_row)
+        self.patient_check = QCheckBox(
+            "Réunion avec données de patients : ne rien envoyer en ligne (Claude désactivé)")
+        self.patient_check.setChecked(self.settings.value("patient_data", False, type=bool))
+        tl.addRow(self.patient_check)
         llm_row = QHBoxLayout()
         self.llm_url = QLineEdit(self.settings.value("llm_url", "http://localhost:1234"))
         self.llm_url.setToolTip("Adresse du serveur LM Studio (onglet Developer)")
@@ -607,8 +626,12 @@ class MainWindow(QMainWindow):
         refresh_models.clicked.connect(self._refresh_llm_models)
         model_row.addWidget(self.llm_model_combo, 1)
         model_row.addWidget(refresh_models)
-        tl.addRow("Modèle IA", model_row)
+        tl.addRow("Modèle LM Studio", model_row)
         tl.addRow("", self.llm_status)
+        self._lmstudio_widgets = [self.llm_url, self.llm_model_combo, refresh_models]
+        self.engine_combo.currentIndexChanged.connect(self._on_engine_changed)
+        self.patient_check.toggled.connect(self._on_engine_changed)
+        self._on_engine_changed()
         from .glossary import default_path
 
         default_glossary = default_path()
@@ -669,13 +692,19 @@ class MainWindow(QMainWindow):
         layout.addWidget(exp_box)
 
         row = QHBoxLayout()
-        self.pptx_btn = QPushButton("Créer le PowerPoint")
+        self.pptx_btn = QPushButton("PowerPoint des captures")
         self.pptx_btn.clicked.connect(self._make_pptx)
+        self.rebuild_btn = QPushButton("PowerPoint reconstruit\n(texte modifiable)")
+        self.rebuild_btn.setToolTip(
+            "Recrée de vraies diapos : titre et puces en texte modifiable, figures découpées, "
+            "dans votre modèle (ou le masque par défaut). Lecture par le moteur IA choisi "
+            "s'il voit les images, sinon par OCR sur ce PC.")
+        self.rebuild_btn.clicked.connect(self._rebuild)
         self.report_btn = QPushButton("Créer le compte-rendu Word")
         self.report_btn.clicked.connect(self._make_report)
         open_btn = QPushButton("Ouvrir le dossier")
         open_btn.clicked.connect(lambda: self.session and open_folder(self.session.folder))
-        for b in (self.pptx_btn, self.report_btn, open_btn):
+        for b in (self.pptx_btn, self.rebuild_btn, self.report_btn, open_btn):
             b.setMinimumHeight(36)
             row.addWidget(b)
         layout.addLayout(row)
@@ -828,6 +857,36 @@ class MainWindow(QMainWindow):
         self.report_btn.setEnabled(False)
         self._run(task)
 
+    def _rebuild(self) -> None:
+        if not self._need_session(with_slides=True):
+            return
+        from .workflow import rebuild_presentation
+
+        engine, claude_model, allow_online = self._engine_choice()
+        template = self.template_edit.text().strip()
+        self.settings.setValue("template", template)
+        session = self.session
+        args = dict(template=Path(template) if template else None, engine=engine,
+                    claude_model=claude_model, allow_online=allow_online,
+                    llm_url=self.llm_url.text().strip() or "http://localhost:1234",
+                    llm_model=self.llm_model_combo.currentData() or None,
+                    transcript=self._transcript(), offset=self._offset())
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.rebuild_btn.setEnabled(False)
+        task = Task(lambda: rebuild_presentation(session, progress=task.progress.emit, **args))
+        task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
+        task.done.connect(self._rebuilt, Q)
+        task.failed.connect(self._task_failed, Q)
+        self._run(task)
+
+    def _rebuilt(self, result) -> None:
+        path, warnings = result
+        self.progress.setVisible(False)
+        if warnings:
+            QMessageBox.warning(self, "PowerPoint reconstruit", "\n".join(warnings))
+        self._created(path, self.rebuild_btn)
+
     def _transcribe(self) -> None:
         if not self._need_session():
             return
@@ -837,7 +896,7 @@ class MainWindow(QMainWindow):
         vocabulary = self.vocab_edit.text().strip()
         language = self.lang_combo.currentData() or None
         translate = self.translate_check.isChecked()
-        use_llm = self.llm_check.isChecked()
+        engine, claude_model, allow_online = self._engine_choice()
         llm_url = self.llm_url.text().strip() or "http://localhost:1234"
         glossary_path = self.glossary_edit.text().strip()
         theme = self.theme_combo.currentData() or ""
@@ -850,7 +909,6 @@ class MainWindow(QMainWindow):
             return
         self.settings.setValue("theme", theme)
         llm_model = self.llm_model_combo.currentData() or None
-        self.settings.setValue("use_llm", use_llm)
         self.settings.setValue("llm_url", llm_url)
         self.settings.setValue("llm_model", llm_model or "")
         self.settings.setValue("glossary", glossary_path)
@@ -866,7 +924,8 @@ class MainWindow(QMainWindow):
         task = Task(lambda: transcribe_session(session, model, vocabulary,
                                                progress=task.progress.emit,
                                                language=language, translate=translate,
-                                               use_llm=use_llm, llm_url=llm_url,
+                                               engine=engine, claude_model=claude_model,
+                                               allow_online=allow_online, llm_url=llm_url,
                                                llm_model=llm_model,
                                                glossary=glossary, theme=theme))
         task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
@@ -882,7 +941,7 @@ class MainWindow(QMainWindow):
         ai = self.session.ai if self.session else {}
         lines = [f"Transcription terminée :\n{path.with_suffix('.txt')}"]
         if ai.get("model"):
-            lines.append(f"Résumé rédigé par l'IA locale : {ai['model']}")
+            lines.append(f"Résumé rédigé par : {ai['model']}")
         for lang, info in (self.session.translations if self.session else {}).items():
             lines.append(f"Version traduite ({lang}) : {info.get('engine', '')}")
         if ai.get("warnings"):
@@ -892,18 +951,50 @@ class MainWindow(QMainWindow):
         ) == QMessageBox.StandardButton.Yes:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.with_suffix(".txt"))))
 
+    def _engine_choice(self) -> tuple[str, str, bool]:
+        """(moteur, modèle Claude, envoi en ligne autorisé), mémorisés."""
+        engine = self.engine_combo.currentData()
+        claude_model = self.claude_model_combo.currentData()
+        allow_online = not self.patient_check.isChecked()
+        self.settings.setValue("engine", engine)
+        self.settings.setValue("claude_model", claude_model)
+        self.settings.setValue("patient_data", not allow_online)
+        return engine, claude_model, allow_online
+
+    def _on_engine_changed(self, *_args) -> None:
+        engine = self.engine_combo.currentData()
+        for w in self._lmstudio_widgets:
+            w.setEnabled(engine == "lmstudio")
+        self.claude_model_combo.setEnabled(engine == "claude" and not self.patient_check.isChecked())
+        if engine == "claude" and self.patient_check.isChecked():
+            self.llm_status.setStyleSheet("color: #d35400;")
+            self.llm_status.setText("Données patients : Claude ne sera pas utilisé (rien ne part en ligne).")
+        elif engine == "claude":
+            self.llm_status.setStyleSheet("color: gray;")
+            self.llm_status.setText("Le texte et les images envoyés partent chez Anthropic ; "
+                                    "consomme le quota de votre abonnement.")
+        else:
+            self.llm_status.setText("")
+
     def _test_llm(self) -> None:
         from .llm import LMStudio
+        from .transcribe import make_engine
 
+        engine, claude_model, allow_online = self._engine_choice()
         url = self.llm_url.text().strip() or "http://localhost:1234"
         chosen = self.llm_model_combo.currentData() or None
         self.settings.setValue("llm_model", chosen or "")
         self.llm_status.setStyleSheet("color: gray;")
+        if engine == "aucun" or (engine == "claude" and not allow_online):
+            self.llm_status.setText("Aucun moteur IA à tester avec ces réglages.")
+            return
         self.llm_status.setText(
-            f"Connexion… (chargement de {chosen} si besoin : jusqu'à 1-2 min)" if chosen else "Connexion…")
+            f"Connexion… (chargement de {chosen} si besoin : jusqu'à 1-2 min)"
+            if engine == "lmstudio" and chosen else "Connexion…")
 
         def probe():
-            client = LMStudio(url, model=chosen, timeout=300)
+            client = (LMStudio(url, model=chosen, timeout=300) if engine == "lmstudio"
+                      else make_engine(engine, claude_model=claude_model))
             name = client.connect()
             reply = client.chat("Réponds en un seul mot.", "Dis « prêt ».", max_tokens=200)
             return name, reply
@@ -976,7 +1067,7 @@ class MainWindow(QMainWindow):
 
     def _task_failed(self, message: str) -> None:
         self.progress.setVisible(False)
-        for b in (self.extract_btn, self.pptx_btn, self.report_btn, self.transcribe_btn):
+        for b in (self.extract_btn, self.pptx_btn, self.rebuild_btn, self.report_btn, self.transcribe_btn):
             b.setEnabled(True)
         self.transcribe_btn.setText("Transcrire")
         QMessageBox.warning(self, "Erreur", message)

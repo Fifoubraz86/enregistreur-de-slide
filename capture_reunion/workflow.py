@@ -177,3 +177,38 @@ def _fmt(t: float) -> str:
     from .slides import format_timestamp
 
     return format_timestamp(t)
+
+
+def rebuild_presentation(
+    session: Session,
+    template: Optional[Path] = None,
+    engine: str = "aucun",
+    claude_model: str = "sonnet",
+    allow_online: bool = True,
+    llm_url: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    transcript: Optional[Path] = None,
+    offset: float = 0.0,
+    progress: Optional[Callable[[float], None]] = None,
+    llm=None,
+) -> tuple[Path, list[str]]:
+    """PowerPoint reconstruit (texte modifiable + figures) : (chemin, avertissements)."""
+    from .rebuild import build_rebuilt_pptx, read_slides
+    from .transcribe import make_engine
+
+    images = session.slide_paths()
+    if not images:
+        raise ValueError("Aucune diapo : lancez d'abord l'extraction.")
+    warnings: list[str] = []
+    client = llm if llm is not None else make_engine(engine, llm_url, llm_model, claude_model,
+                                                     allow_online, warnings)
+    contents, read_warnings = read_slides(images, session.folder, client, progress)
+    warnings += read_warnings
+
+    notes: dict[int, str] = {}
+    transcript, offset = resolve_transcript(session, transcript, offset)
+    if transcript:
+        notes = notes_by_slide(sections_for(session, transcript, offset), offset)
+    output = build_rebuilt_pptx(contents, session.folder, session.folder / "diapos_reconstruites.pptx",
+                                template=template, notes=notes)
+    return output, warnings

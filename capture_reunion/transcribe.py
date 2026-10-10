@@ -237,6 +237,26 @@ def write_text(
     return Path(path)
 
 
+def make_engine(engine: str, llm_url: Optional[str] = None, llm_model: Optional[str] = None,
+                claude_model: str = "sonnet", allow_online: bool = True,
+                warnings: Optional[list[str]] = None):
+    """Moteur d'IA choisi, ou None (« aucun », ou Claude interdit pour cette réunion)."""
+    if engine == "claude":
+        if not allow_online:
+            if warnings is not None:
+                warnings.append("Claude non utilisé : réunion marquée « données patients », rien "
+                                "n'est envoyé en ligne.")
+            return None
+        from .claude_code import ClaudeCode
+
+        return ClaudeCode(claude_model)
+    if engine == "lmstudio":
+        from .llm import LMStudio
+
+        return LMStudio(llm_url or "http://localhost:1234", llm_model)
+    return None
+
+
 def _stage(progress, start: float, end: float):
     return (lambda p: progress(start + (end - start) * p)) if progress else None
 
@@ -282,26 +302,31 @@ def transcribe_session(
     glossary=None,
     llm=None,
     theme: str = "",
+    engine: str = "lmstudio",
+    claude_model: str = "sonnet",
+    allow_online: bool = True,
 ) -> Path:
     """Transcrit l'enregistrement.
 
     Écrit transcription.srt (horodatage fin, pour les diapos) et transcription.txt
     (paragraphes + résumés) ; avec ``translate``, aussi transcription_<langue>.srt/.txt.
 
-    Si LM Studio est lancé (``use_llm``), il rédige un résumé de chaque diapo et un
-    résumé global, et assure la traduction ; sinon traduction Argos et phrases clés.
+    ``engine`` : « lmstudio » (IA locale), « claude » (abonnement Claude via Claude
+    Code ; refusé si ``allow_online`` est faux, ex. réunion avec données patients) ou
+    « aucun ». L'IA rédige un résumé de chaque diapo et un résumé global, et assure la
+    traduction ; sans IA : traduction Argos et phrases clés.
     Les problèmes non bloquants sont listés dans ``session.ai["warnings"]``.
     """
-    from .llm import LLMError, LMStudio
+    from .llm import LLMError
 
     warnings: list[str] = []
-    client = None
-    if use_llm:
-        client = llm or LMStudio(llm_url or "http://localhost:1234", llm_model)
+    client = make_engine(engine if use_llm else "aucun", llm_url, llm_model, claude_model,
+                         allow_online, warnings) if llm is None else llm
+    if client is not None:
         try:
             client.connect()
         except LLMError as exc:
-            warnings.append(f"IA locale non utilisée : {exc}")
+            warnings.append(f"{client.label} non utilisé : {exc}")
             client = None
 
     steps = [("transcription", 6)] + ([("resume", 2)] if client else []) + ([("traduction", 2)] if translate else [])
@@ -328,20 +353,15 @@ def transcribe_session(
     if client:
         try:
             parts = _parts_for_summary(session, paragraphs, lang)
-            stage = _stage(progress, *bounds["resume"])
-            summarized = []
-            for i, (label, text) in enumerate(parts):
-                summarized.append((label, client.summarize_part(text[:12000], lang, label)))
-                if stage:
-                    stage((i + 1) / (len(parts) + 1))
-            ai_text = client.summarize_global(summarized, lang, session.window_title)
+            summarized, ai_text = client.summarize_all(parts, lang, session.window_title,
+                                                       _stage(progress, *bounds["resume"]))
             prefix = SLIDE_LABEL.get(lang, "Diapo") + " "
             slide_summaries = {label[len(prefix):]: text for label, text in summarized
                                if label.startswith(prefix) and text}
-            session.ai = {"model": client.model, "summary": {lang: ai_text},
+            session.ai = {"model": client.display_name, "summary": {lang: ai_text},
                           "slide_summaries": {lang: slide_summaries}}
         except LLMError as exc:
-            warnings.append(f"Résumé par l'IA locale impossible : {exc}")
+            warnings.append(f"Résumé par {client.label} impossible : {exc}")
             ai_text, slide_summaries = "", {}
     write_text(paragraphs, session.folder / "transcription.txt", summary, lang,
                ai_text, session.ai.get("model", ""))
@@ -354,18 +374,22 @@ def transcribe_session(
         stage = _stage(progress, *bounds["traduction"])
         try:
             if client:
-                texts = client.translate([p.text for p in paragraphs], lang, target, glossary, stage)
+                # Une seule liste à traduire (paragraphes, phrases clés, mots-clés, « En bref »)
+                # pour limiter le nombre d'appels.
+                keys = list(slide_summaries)
+                batch = ([p.text for p in paragraphs] + summary.sentences
+                         + [", ".join(summary.keywords)] + [slide_summaries[k] for k in keys])
+                out = client.translate(batch, lang, target, glossary, stage)
+                n_par, n_sent = len(paragraphs), len(summary.sentences)
+                texts = out[:n_par]
+                t_sentences = out[n_par:n_par + n_sent]
+                t_keywords = [k.strip() for k in out[n_par + n_sent].split(",") if k.strip()]
+                t_slides = dict(zip(keys, out[n_par + n_sent + 1:]))
                 if client.last_failures:
                     warnings.append(
-                        f"{client.last_failures} paragraphe(s) sur {len(paragraphs)} n'ont pas pu être "
-                        "traduits par l'IA locale et sont restés dans la langue d'origine.")
-                t_sentences = client.translate(summary.sentences, lang, target, glossary)
-                t_keywords = [k.strip() for k in client.translate(
-                    [", ".join(summary.keywords)], lang, target, glossary)[0].split(",") if k.strip()]
+                        f"{client.last_failures} passage(s) n'ont pas pu être traduits par "
+                        f"{client.label} et sont restés dans la langue d'origine.")
                 t_ai = client.translate_document(ai_text, lang, target, glossary) if ai_text else ""
-                keys = list(slide_summaries)
-                t_slides = dict(zip(keys, client.translate([slide_summaries[k] for k in keys],
-                                                           lang, target, glossary))) if keys else {}
             else:
                 from .translate import Translator
 
@@ -387,7 +411,7 @@ def transcribe_session(
             session.translations[target] = {
                 "transcript": t_srt,
                 "summary": {"sentences": t_sentences, "keywords": t_keywords},
-                "engine": f"IA locale ({client.model})" if client else "Argos",
+                "engine": client.display_name if client else "Argos",
             }
             if t_ai:
                 session.ai["summary"][target] = t_ai
