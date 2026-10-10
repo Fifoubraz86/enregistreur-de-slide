@@ -102,7 +102,8 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
 - **Heure de début du Plaud** (export Plaud uniquement) : l'heure à laquelle vous avez lancé l'enregistrement Plaud (visible dans l'appli). Le logiciel connaît l'heure de début de la vidéo et calcule le décalage. « Ajustement fin » permet de corriger de quelques secondes.
 - **Créer le PowerPoint** : une diapo par photo. Les notes du présentateur contiennent l'heure d'affichage et, si une transcription est fournie, ce qui a été dit.
 - **PowerPoint reconstruit (texte modifiable)** : recrée de vraies diapos à partir des captures. Le titre et les puces (avec leurs niveaux) deviennent du texte modifiable, et les graphiques, photos et schémas sont découpés et placés comme images.
-  - **Masque** : celui du champ « Modèle PowerPoint », ou à défaut le masque sobre fourni (`modeles/masque_par_defaut.pptx`, modifiable dans PowerPoint).
+  - **Masque** : celui du champ « Modèle PowerPoint », ou à défaut le masque par défaut `modeles/masque_par_defaut.pptx` (masque du service : titre bleu, bandeau dégradé, numéro de diapo). Un masque neutre est aussi fourni : `modeles/masque_sobre.pptx`. Pour changer de masque par défaut, remplacez simplement ce fichier.
+  - **Accents** : l'OCR local perd parfois les accents. Sur les diapos en français, le logiciel les rétablit pour les mots connus (termes du glossaire et mots courants), et corrige « I' » en « l' ».
   - **Lecture des diapos** : par le moteur IA s'il voit les images (Claude, ou un modèle de vision dans LM Studio). Sinon par OCR sur le PC (hors ligne), qui lit bien le texte mais devine la mise en forme plus grossièrement.
   - **Lectures mémorisées** dans `diapos_lues.json` : refaire le PowerPoint avec un autre masque ne relit pas les diapos et ne reconsomme pas de quota.
   - Les notes de chaque diapo contiennent la transcription et le nom de la capture d'origine. Relisez toujours le résultat : une lecture automatique peut se tromper.

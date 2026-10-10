@@ -173,7 +173,7 @@ def _contains(a: Box, b: Box) -> bool:
     return a[0] <= b[0] and a[1] <= b[1] and a[0] + a[2] >= b[0] + b[2] and a[1] + a[3] >= b[1] + b[3]
 
 
-def ocr_slide(image: np.ndarray, index: int = 0) -> SlideContent:
+def ocr_slide(image: np.ndarray, index: int = 0, vocab: Optional[dict[str, str]] = None) -> SlideContent:
     """Lecture hors ligne : titre, puces (avec niveaux) et figures, déduits de la mise en page."""
     h, w = image.shape[:2]
     lines = []
@@ -182,6 +182,14 @@ def ocr_slide(image: np.ndarray, index: int = 0) -> SlideContent:
             continue
         lines.append(_Line(float(box[:, 0].min()), float(box[:, 1].min()),
                            float(box[:, 0].max()), float(box[:, 1].max()), text.strip()))
+    if looks_french(" ".join(l.text for l in lines)):
+        # L'OCR perd souvent les accents ; on ne les rétablit que sur une diapo en français
+        # (sur une diapo en anglais, « lanreotide » doit rester tel quel).
+        vocab = vocab if vocab is not None else accent_vocabulary()
+        for line in lines:
+            line.text = restore_accents(line.text, vocab)
+            # Confusion classique de l'OCR : « I'hypokaliémie » pour « l'hypokaliémie ».
+            line.text = re.sub(r"(?<![A-Za-zÀ-ÿ])I(?=['’][a-zà-ÿ])", "l", line.text)
     figures = detect_figures(image, [(l.x0, l.y0, l.x1, l.y1) for l in lines])
     # Les petits textes collés à une figure (légendes d'axes, sources) en font partie.
     near = 0.03
@@ -253,6 +261,74 @@ def ocr_slide(image: np.ndarray, index: int = 0) -> SlideContent:
     return SlideContent(index, title, bullets, figures, engine="OCR local")
 
 
+COMMON_ACCENTED = """
+à â ç é è ê ë î ï ô ù û après arrêt arrêter très déjà être même où là deuxième troisième
+première premières dernière dernières étude études étape étapes état résultat résultats
+données réponse réponses évaluation élevé élevée élevés élevées médical médicale médicaux
+médecin médecins thérapie thérapies thérapeutique thérapeutiques diagnostic diagnostique
+dépistage prévalence fréquence fréquent fréquente sévère sévérité efficacité sécurité
+qualité durée année années intérêt intérêts critère critères stratégie stratégies
+généralement général générale spécifique spécificité sensibilité contrôle contrôlé
+randomisé randomisée réduit réduite réduction améliore amélioration bénéfice bénéfices
+risque élevé âge âgé âgés âgées hôpital présentation présente présenté présentés
+recommandé recommandée recommandations référence références systématique traitée traité
+traités évolution différencié différenciée différenciés inférieur supérieur supérieure
+intérieur extérieur sérique sériques métastase métastases métastatique hépatique hépatiques
+rénal rénale rénine aldostérone hypokaliémie hypertension cathétérisme surrénalien surrénalienne
+surrénale surrénales thyroïde thyroïdien thyroïdienne cétose glycémie hémoglobine stéroïde
+stéroïdes corticoïdes minéralocorticoïdes glucocorticoïdes hormonothérapie chimiothérapie
+radiothérapie scintigraphie échographie mélanome lésion lésions tumoral tumorale prolifératif
+""".split()
+
+
+def _strip_accents(word: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", word) if unicodedata.category(c) != "Mn")
+
+
+def accent_vocabulary(glossary=None) -> dict[str, str]:
+    """{mot sans accents : mot accentué}, depuis le glossaire et une liste de mots courants."""
+    words = set(COMMON_ACCENTED)
+    if glossary:
+        for entry in glossary.entries:
+            words.update(re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]+", entry.fr))
+    vocab: dict[str, str] = {}
+    for w in words:
+        lower = w.lower()
+        plain = _strip_accents(lower)
+        if plain != lower and len(plain) >= 3:
+            vocab.setdefault(plain, lower)
+    return vocab
+
+
+def looks_french(text: str) -> bool:
+    """Vrai si le texte contient plus de mots courants français qu'anglais."""
+    from .summarize import STOPWORDS
+
+    fr_only = STOPWORDS["fr"] - STOPWORDS["en"]
+    en_only = STOPWORDS["en"] - STOPWORDS["fr"]
+    words = re.findall(r"[a-zà-ÿ']+", _strip_accents(text.lower()))
+    fr = sum(w in {_strip_accents(x) for x in fr_only} for w in words)
+    en = sum(w in en_only for w in words)
+    accented = bool(re.search(r"[éèêàùçôîâû]", text.lower()))
+    return fr > en or (accented and fr >= en)
+
+
+def restore_accents(text: str, vocab: dict[str, str]) -> str:
+    """Remet les accents que l'OCR a perdus (« Apres » → « Après ») sur les mots connus."""
+    def fix(m: re.Match) -> str:
+        word = m.group(0)
+        known = vocab.get(_strip_accents(word.lower()))
+        if not known or known == word.lower():
+            return word
+        if word.isupper():
+            return known.upper()
+        return known[0].upper() + known[1:] if word[0].isupper() else known
+
+    return re.sub(r"[A-Za-zÀ-ÖØ-öø-ÿ]+", fix, text)
+
+
 def refine_figures(ai_boxes: list[Box], detected: list[Box]) -> list[Box]:
     """Les rectangles donnés par l'IA sont approximatifs : on les cale sur ceux détectés."""
     out = []
@@ -269,6 +345,7 @@ def read_slides(
     engine=None,
     progress: Optional[Callable[[float], None]] = None,
     use_cache: bool = True,
+    glossary=None,
 ) -> tuple[list[SlideContent], list[str]]:
     """Lit toutes les diapos (IA si possible, sinon OCR). Renvoie (contenus, avertissements)."""
     from .llm import LLMError
@@ -321,8 +398,9 @@ def read_slides(
             progress(0.5)
 
     remaining = [(n, p) for n, p in todo if n not in contents]
+    vocab = accent_vocabulary(glossary) if remaining else {}
     for i, (n, path) in enumerate(remaining, start=1):
-        contents[n] = ocr_slide(read_image(path), n)
+        contents[n] = ocr_slide(read_image(path), n, vocab)
         if progress:
             progress(0.5 + 0.5 * i / len(remaining))
 
@@ -429,9 +507,10 @@ def _find_layout(prs, with_body: bool):
 def _font_size(bullets: list[tuple[str, int]], narrow: bool):
     from pptx.util import Pt
 
-    chars = sum(len(t) for t, _ in bullets) * (1.8 if narrow else 1.0)
-    lines = len(bullets) + chars / 90
-    return Pt(max(12, min(26, round(30 - 1.6 * lines))))
+    # Lignes affichées estimées (une puce longue tient sur plusieurs lignes).
+    per_line = 45 if narrow else 80
+    lines = sum(1 + len(t) // per_line for t, _ in bullets)
+    return Pt(max(14, min(28, round(32 - 1.3 * lines))))
 
 
 def build_rebuilt_pptx(
@@ -445,7 +524,7 @@ def build_rebuilt_pptx(
     from pptx.enum.shapes import PP_PLACEHOLDER
     from pptx.util import Emu
 
-    from .export import _remove_existing_slides, open_template
+    from .export import _remove_existing_slides, add_slide_number, fill_slide_number, open_template
 
     folder = Path(folder)
     template = template or default_template_path()
@@ -468,6 +547,8 @@ def build_rebuilt_pptx(
                 title_ph = ph
             elif kind in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT) and body_ph is None and has_body:
                 body_ph = ph
+            elif kind == PP_PLACEHOLDER.SLIDE_NUMBER:
+                fill_slide_number(ph, c.index)
             else:
                 ph._element.getparent().remove(ph._element)  # dates, pieds de page, cadres vides…
 
@@ -521,6 +602,7 @@ def build_rebuilt_pptx(
                 left = fbox[0] + (fbox[2] - pw) // 2
                 top_k = fbox[1] + k * slot_h + (slot_h - phh) // 2
                 slide.shapes.add_picture(str(path), left, top_k, pw, phh)
+        add_slide_number(slide, c.index)
         note = (notes or {}).get(c.index, "")
         source = f"Capture d'origine : diapos/{c.source} — lecture : {c.engine}"
         slide.notes_slide.notes_text_frame.text = f"{note}\n\n{source}".strip()

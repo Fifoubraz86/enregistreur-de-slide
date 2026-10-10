@@ -870,7 +870,8 @@ class MainWindow(QMainWindow):
                     claude_model=claude_model, allow_online=allow_online,
                     llm_url=self.llm_url.text().strip() or "http://localhost:1234",
                     llm_model=self.llm_model_combo.currentData() or None,
-                    transcript=self._transcript(), offset=self._offset())
+                    transcript=self._transcript(), offset=self._offset(),
+                    glossary_path=Path(self.glossary_edit.text().strip()) if self.glossary_edit.text().strip() else None)
         self.progress.setValue(0)
         self.progress.setVisible(True)
         self.rebuild_btn.setEnabled(False)

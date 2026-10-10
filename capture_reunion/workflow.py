@@ -191,6 +191,7 @@ def rebuild_presentation(
     offset: float = 0.0,
     progress: Optional[Callable[[float], None]] = None,
     llm=None,
+    glossary_path: Optional[Path] = None,
 ) -> tuple[Path, list[str]]:
     """PowerPoint reconstruit (texte modifiable + figures) : (chemin, avertissements)."""
     from .rebuild import build_rebuilt_pptx, read_slides
@@ -202,7 +203,10 @@ def rebuild_presentation(
     warnings: list[str] = []
     client = llm if llm is not None else make_engine(engine, llm_url, llm_model, claude_model,
                                                      allow_online, warnings)
-    contents, read_warnings = read_slides(images, session.folder, client, progress)
+    from .glossary import default_path, load
+
+    contents, read_warnings = read_slides(images, session.folder, client, progress,
+                                          glossary=load(glossary_path or default_path()))
     warnings += read_warnings
 
     notes: dict[int, str] = {}

@@ -39,6 +39,50 @@ def open_template(path: Optional[Path]):
     return Presentation(out)
 
 
+def fill_slide_number(placeholder, number: int) -> None:
+    """Met dans l'espace réservé un vrai champ « numéro de diapo » (mis à jour par PowerPoint)."""
+    import uuid
+
+    from lxml import etree
+    from pptx.oxml.ns import qn
+
+    para = placeholder.text_frame.paragraphs[0]._p
+    for child in list(para):
+        if child.tag in (qn("a:r"), qn("a:fld"), qn("a:br")):
+            para.remove(child)
+    fld = etree.SubElement(para, qn("a:fld"))
+    fld.set("id", "{" + str(uuid.uuid4()).upper() + "}")
+    fld.set("type", "slidenum")
+    etree.SubElement(fld, qn("a:rPr")).set("lang", "fr-FR")
+    etree.SubElement(fld, qn("a:t")).text = str(number)
+    end = para.find(qn("a:endParaRPr"))
+    if end is not None:  # endParaRPr doit rester en dernier
+        para.remove(end)
+        para.append(end)
+
+
+def add_slide_number(slide, number: int) -> None:
+    """Ajoute le numéro de diapo de la disposition (python-pptx ne recopie pas cet
+    espace réservé lors de la création de la diapo)."""
+    import copy
+
+    from pptx.enum.shapes import PP_PLACEHOLDER
+
+    if any(ph.placeholder_format.type == PP_PLACEHOLDER.SLIDE_NUMBER for ph in slide.placeholders):
+        target = next(ph for ph in slide.placeholders
+                      if ph.placeholder_format.type == PP_PLACEHOLDER.SLIDE_NUMBER)
+    else:
+        source = next((ph for ph in slide.slide_layout.placeholders
+                       if ph.placeholder_format.type == PP_PLACEHOLDER.SLIDE_NUMBER), None)
+        if source is None:
+            return
+        element = copy.deepcopy(source._element)
+        slide.shapes._spTree.append(element)
+        target = next(ph for ph in slide.placeholders
+                      if ph.placeholder_format.type == PP_PLACEHOLDER.SLIDE_NUMBER)
+    fill_slide_number(target, number)
+
+
 def _remove_existing_slides(prs) -> None:
     id_list = prs.slides._sldIdLst
     for sld_id in list(id_list):
@@ -101,7 +145,11 @@ def build_pptx(
     for number, image_path in enumerate(images, start=1):
         slide = prs.slides.add_slide(layout)
         for ph in list(slide.placeholders):
-            ph._element.getparent().remove(ph._element)
+            if ph.placeholder_format.type == PP_PLACEHOLDER.SLIDE_NUMBER:
+                fill_slide_number(ph, number)
+            else:
+                ph._element.getparent().remove(ph._element)
+        add_slide_number(slide, number)
         with Image.open(image_path) as img:
             iw, ih = img.size
         left, top, width, height = _fit(iw, ih, box)

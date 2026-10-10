@@ -147,6 +147,10 @@ def test_rebuild_with_ocr_and_default_template(session):
     assert (session.folder / "diapos_figures" / "diapo_001_figure_1.png").exists()
     assert "lecture : OCR local" in slide.notes_slide.notes_text_frame.text
     assert prs.slide_width > prs.slide_height  # masque par défaut 16:9
+    numbers = [ph for ph in slide.placeholders if ph.placeholder_format.type is not None
+               and "SLIDE_NUMBER" in str(ph.placeholder_format.type)]
+    assert numbers and numbers[0].text_frame.text == "1"
+    assert b'type="slidenum"' in numbers[0]._element.xml.encode()
 
 
 def test_rebuild_with_claude_vision_and_cache(session, claude_log, monkeypatch):
@@ -185,3 +189,35 @@ def test_rebuild_with_user_template(session, tmp_path):
     prs = Presentation(str(out))
     assert len(prs.slides) == 2
     assert "BANDEAU MAISON" in [sh.text_frame.text for sh in prs.slide_master.shapes if sh.has_text_frame]
+
+
+def test_restore_accents():
+    from capture_reunion.glossary import default_path, load
+
+    vocab = rebuild.accent_vocabulary(load(default_path()))
+    fixed = rebuild.restore_accents("Apres correction ; Arret des antagonistes mineralocorticoides. TRES", vocab)
+    assert fixed == "Après correction ; Arrêt des antagonistes minéralocorticoïdes. TRÈS"
+    assert rebuild.restore_accents("the liver after treatment", vocab) == "the liver after treatment"
+
+
+def test_accents_only_on_french_slides():
+    assert rebuild.looks_french("Rapport aldostérone / rénine après correction de l'hypokaliémie")
+    assert not rebuild.looks_french("Somatostatin analogues first line. Lanreotide or octreotide")
+
+
+def test_french_slide_reconstruction_fixes_ocr_glitches(tmp_path):
+    from PIL import Image, ImageDraw
+
+    from slide_fixtures import _font
+
+    img = Image.new("RGB", (1280, 720), "white")
+    d = ImageDraw.Draw(img)
+    d.text((60, 40), "Hyperaldostéronisme primaire : dépistage", fill=(20, 40, 90), font=_font(46))
+    for k, (t, ind) in enumerate((("Rapport aldostérone / rénine", 0),
+                                  ("Après correction de l'hypokaliémie", 1),
+                                  ("Arrêt des antagonistes minéralocorticoïdes", 1))):
+        d.text((80 + ind * 50, 170 + 62 * k), f"• {t}", fill="black", font=_font(30))
+    c = rebuild.ocr_slide(cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR), 1)
+    texts = [t for t, _ in c.bullets]
+    assert "Après correction de l'hypokaliémie" in texts
+    assert "Arrêt des antagonistes minéralocorticoïdes" in texts

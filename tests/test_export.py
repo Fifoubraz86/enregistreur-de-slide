@@ -57,7 +57,8 @@ def test_pptx_with_potx_template(tmp_path):
     texts = [sh.text_frame.text for sh in prs.slide_master.shapes if sh.has_text_frame]
     assert "BANDEAU MAISON" in texts
     for slide in prs.slides:
-        assert len(slide.placeholders) == 0
+        # Seul le numéro de diapo reste (s'il existe dans la disposition).
+        assert all("SLIDE_NUMBER" in str(ph.placeholder_format.type) for ph in slide.placeholders)
         pic = slide.shapes[0]
         assert pic.left >= 0 and pic.left + pic.width <= prs.slide_width
 
