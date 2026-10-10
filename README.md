@@ -45,6 +45,8 @@ Deux règles à respecter :
 
 **Arrêt automatique** (activé par défaut, réglable) : après 3 minutes sans activité, c'est-à-dire sans image qui change notablement ni son (participants ou micro), l'enregistrement s'arrête tout seul et la fin morte est coupée (10 secondes de marge gardées). Pendant l'enregistrement, des indicateurs montrent le niveau du son de l'ordinateur et du micro. Si aucun son de l'ordinateur n'arrive après 30 secondes, une alerte suggère que le son est coupé.
 
+**Mise en veille :** pendant l'enregistrement, le logiciel empêche Windows de se mettre en veille et d'éteindre l'écran. Il rend la main à l'arrêt. Attention : refermer l'écran d'un portable déclenche quand même la mise en veille si Windows est réglé ainsi (Paramètres → Système → Alimentation → « Action à la fermeture du capot »).
+
 **Volume à 0 ou muet :** le logiciel enregistre le son que Windows envoie à la sortie audio. Il ne contourne pas un réglage qui coupe le son *avant* : le volume de Zoom/Teams au minimum, ou le volume de l'application dans le mélangeur de Windows. Avec le volume général de Windows à 0 ou en muet, le résultat dépend du pilote audio : faites un essai de 30 secondes (l'indicateur et l'alerte vous le diront). Pour ne rien entendre tout en enregistrant à coup sûr, le plus fiable est de garder le volume normal et de brancher un casque sans le porter.
 
 À l'arrêt, un dossier est créé dans `Vidéos\Capture reunion\` :

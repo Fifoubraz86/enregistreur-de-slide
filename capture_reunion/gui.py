@@ -494,7 +494,8 @@ class MainWindow(QMainWindow):
             return
         elapsed = format_timestamp(r.elapsed)
         slides = f" — {r.slide_count} diapo(s)" if r.detector else ""
-        lines = [f"● Enregistrement en cours : {elapsed}{slides}"]
+        awake = " — mise en veille bloquée" if getattr(getattr(r, "_keep_awake", None), "active", False) else ""
+        lines = [f"● Enregistrement en cours : {elapsed}{slides}{awake}"]
         names = {"participants": "Son de l'ordinateur", "moi": "Micro"}
         levels = r.audio_levels()
         if levels:

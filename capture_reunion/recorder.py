@@ -208,6 +208,9 @@ class Recorder:
         self.idle_margin = idle_margin
         self.auto_stopped = False
         self._last_image_activity: Optional[float] = None
+        from .power import KeepAwake
+
+        self._keep_awake = KeepAwake()
 
     @property
     def folder(self) -> Path:
@@ -296,6 +299,7 @@ class Recorder:
         )
         self._t0 = time.monotonic()
         self._last_image_activity = self._t0
+        self._keep_awake.start()  # pas de mise en veille ni d'écran éteint pendant l'enregistrement
         self._threads = [threading.Thread(target=self._write_loop, daemon=True),
                          threading.Thread(target=self._activity_loop, daemon=True)]
         if self.detector:
@@ -355,6 +359,7 @@ class Recorder:
         if auto and self._t0:
             trim_to = max(1.0, self.last_activity - self._t0 + self.idle_margin)
         self._stop.set()
+        self._keep_awake.stop()
         self._source.stop()
         for t in self._threads:
             t.join(timeout=10)
