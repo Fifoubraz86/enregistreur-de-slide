@@ -14,6 +14,16 @@ def app():
     return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
 
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path):
+    """Réglages dans un dossier temporaire : les tests ne lisent ni n'écrivent les vrais."""
+    from PySide6.QtCore import QSettings
+
+    for fmt in (QSettings.Format.NativeFormat, QSettings.Format.IniFormat):
+        QSettings.setPath(fmt, QSettings.Scope.UserScope, str(tmp_path))
+    yield
+
+
 def test_targets_order_and_zoom_warning(app, monkeypatch):
     windows = [
         WindowInfo(10, "Bloc-notes", "notepad.exe"),
