@@ -206,3 +206,21 @@ def test_no_auto_stop_when_disabled(tmp_path, monkeypatch):
     r = rec_mod.Recorder(1, tmp_path, record_audio=False, detect_slides=False)
     r._t0 = time.monotonic() - 3600
     assert r.idle_seconds > 3000 and not r.should_auto_stop
+
+
+def test_black_frames_are_reported(tmp_path, monkeypatch):
+    class BlackSource(FakeSource):
+        def latest(self):
+            return np.zeros((360, 640, 4), np.uint8)
+
+    try:
+        find_ffmpeg()
+    except FileNotFoundError:
+        pytest.skip("ffmpeg absent")
+    monkeypatch.setattr(rec_mod, "_WindowSource", BlackSource)
+    monkeypatch.setattr(rec_mod, "ACTIVITY_INTERVAL", 0.1)
+    r = rec_mod.Recorder(1, tmp_path, fps=5, record_audio=False, detect_slides=False)
+    r.start()
+    time.sleep(1.0)
+    assert r.black_seconds > 0.5
+    r.stop()

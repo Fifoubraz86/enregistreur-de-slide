@@ -510,6 +510,10 @@ class MainWindow(QMainWindow):
         if computer and computer["silent_for"] is None and r.elapsed >= 30:
             warnings.append("⚠ Aucun son de l'ordinateur reçu depuis le début : le son de la réunion "
                             "est-il coupé (volume à 0, muet, ou volume de Zoom/Teams au minimum) ?")
+        if getattr(r, "black_seconds", 0) >= 6:
+            warnings.append(f"⚠ L'image capturée est noire depuis {int(r.black_seconds)} s. Un jeu ou une "
+                            "vidéo en plein écran exclusif empêche la capture : passez-le en mode "
+                            "« fenêtré sans bordure » ou utilisez un autre écran.")
         if r.hwnd is not None and is_minimized(r.hwnd):
             warnings.append("⚠ La fenêtre est réduite : l'image est figée. Rouvrez-la "
                             "(elle peut rester derrière les autres fenêtres).")
@@ -601,6 +605,19 @@ class MainWindow(QMainWindow):
         engine_row.addWidget(self.engine_combo, 2)
         engine_row.addWidget(self.claude_model_combo, 1)
         tl.addRow("Moteur IA", engine_row)
+        claude_row = QHBoxLayout()
+        self.claude_path_edit = QLineEdit(self.settings.value("claude_path", ""))
+        self.claude_path_edit.setPlaceholderText("Détection automatique de Claude Code (ou chemin de claude.exe)")
+        claude_browse = QPushButton("…")
+        claude_browse.setFixedWidth(32)
+        claude_browse.clicked.connect(self._browse_claude)
+        claude_detect = QPushButton("Détecter")
+        claude_detect.clicked.connect(self._detect_claude)
+        claude_row.addWidget(self.claude_path_edit, 1)
+        claude_row.addWidget(claude_browse)
+        claude_row.addWidget(claude_detect)
+        tl.addRow("Claude Code", claude_row)
+        self._claude_widgets = [self.claude_model_combo, self.claude_path_edit, claude_browse, claude_detect]
         self.patient_check = QCheckBox(
             "Réunion avec données de patients : ne rien envoyer en ligne (Claude désactivé)")
         self.patient_check.setChecked(self.settings.value("patient_data", False, type=bool))
@@ -960,13 +977,49 @@ class MainWindow(QMainWindow):
         self.settings.setValue("engine", engine)
         self.settings.setValue("claude_model", claude_model)
         self.settings.setValue("patient_data", not allow_online)
+        path = self.claude_path_edit.text().strip()
+        self.settings.setValue("claude_path", path)
+        if path:
+            os.environ["CAPTURE_REUNION_CLAUDE"] = path  # lu par claude_code.find_claude
+        else:
+            os.environ.pop("CAPTURE_REUNION_CLAUDE", None)
         return engine, claude_model, allow_online
+
+    def _browse_claude(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Claude Code (claude.exe)", str(Path.home()), "Claude Code (claude.exe claude.cmd);;Tous (*)")
+        if path:
+            self.claude_path_edit.setText(path)
+
+    def _detect_claude(self) -> None:
+        from .claude_code import INSTALL_HELP, find_claude
+
+        self.claude_path_edit.setText("")
+        self._engine_choice()
+        self.llm_status.setStyleSheet("color: gray;")
+        self.llm_status.setText("Recherche de Claude Code…")
+        task = Task(find_claude)
+
+        def done(path):
+            if path:
+                self.claude_path_edit.setText(path)
+                self.llm_status.setStyleSheet("color: #1e8449;")
+                self.llm_status.setText(f"✔ Claude Code trouvé : {path}")
+            else:
+                self.llm_status.setStyleSheet("color: #c0392b;")
+                self.llm_status.setText("✘ Claude Code introuvable sur ce PC.")
+                QMessageBox.information(self, "Claude Code", INSTALL_HELP)
+
+        task.done.connect(done, Q)
+        task.failed.connect(lambda m: self.llm_status.setText(f"✘ {m}"), Q)
+        self._run(task)
 
     def _on_engine_changed(self, *_args) -> None:
         engine = self.engine_combo.currentData()
         for w in self._lmstudio_widgets:
             w.setEnabled(engine == "lmstudio")
-        self.claude_model_combo.setEnabled(engine == "claude" and not self.patient_check.isChecked())
+        for w in self._claude_widgets:
+            w.setEnabled(engine == "claude" and not self.patient_check.isChecked())
         if engine == "claude" and self.patient_check.isChecked():
             self.llm_status.setStyleSheet("color: #d35400;")
             self.llm_status.setText("Données patients : Claude ne sera pas utilisé (rien ne part en ligne).")

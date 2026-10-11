@@ -208,6 +208,7 @@ class Recorder:
         self.idle_margin = idle_margin
         self.auto_stopped = False
         self._last_image_activity: Optional[float] = None
+        self._black_since: Optional[float] = None
         from .power import KeepAwake
 
         self._keep_awake = KeepAwake()
@@ -334,8 +335,19 @@ class Recorder:
                 previous, active = image_activity(previous, self._source.latest())
             except Exception:
                 continue
+            now = time.monotonic()
             if active:
-                self._last_image_activity = time.monotonic()
+                self._last_image_activity = now
+            # Image noire (jeu ou vidéo en plein écran exclusif, écran verrouillé…).
+            if float(previous.mean()) < 8 and float(previous.std()) < 4:
+                self._black_since = self._black_since or now
+            else:
+                self._black_since = None
+
+    @property
+    def black_seconds(self) -> float:
+        """Depuis combien de secondes l'image capturée est entièrement noire (0 : elle ne l'est pas)."""
+        return time.monotonic() - self._black_since if self._black_since else 0.0
 
     def _detect_loop(self) -> None:
         interval = self.detector_settings.sample_interval

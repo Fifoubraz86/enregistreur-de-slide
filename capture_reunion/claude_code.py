@@ -41,20 +41,79 @@ OPTIONAL_FLAGS = {
 }
 
 
+INSTALL_HELP = (
+    "Claude Code est un outil distinct de l'application Claude (claude.ai / Claude Desktop). "
+    "Pour l'installer : ouvrez PowerShell et tapez\n"
+    "    irm https://claude.ai/install.ps1 | iex\n"
+    "puis tapez « claude » dans un nouveau terminal pour vous connecter à votre compte. "
+    "Si Claude Code est déjà installé ailleurs, indiquez son chemin dans le champ « Claude Code »."
+)
+
+
+def _registry_path_dirs() -> list[str]:
+    """Dossiers du PATH enregistrés dans Windows (à jour même si le logiciel a été lancé
+    avant l'installation de Claude Code)."""
+    if sys.platform != "win32":
+        return []
+    import winreg
+
+    dirs: list[str] = []
+    for hive, key in ((winreg.HKEY_CURRENT_USER, r"Environment"),
+                      (winreg.HKEY_LOCAL_MACHINE,
+                       r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+        try:
+            with winreg.OpenKey(hive, key) as k:
+                value, _ = winreg.QueryValueEx(k, "Path")
+            dirs += [os.path.expandvars(d) for d in str(value).split(";") if d]
+        except OSError:
+            continue
+    return dirs
+
+
+def _is_claude_code(path: str) -> bool:
+    """Vérifie que c'est bien l'outil en ligne de commande (et pas l'application de bureau)."""
+    lowered = path.lower()
+    if "anthropicclaude" in lowered or lowered.endswith(("claude desktop.exe",)):
+        return False  # application Claude Desktop : ne surtout pas la lancer
+    try:
+        proc = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=30,
+                              creationflags=NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0 and "claude code" in (proc.stdout + proc.stderr).lower()
+
+
 def find_claude() -> Optional[str]:
-    """Chemin de Claude Code (installateur officiel, npm, ou PATH)."""
+    """Chemin de Claude Code : réglage manuel, PATH, PATH enregistré dans Windows,
+    installateur officiel, npm, ou version fournie avec l'application de bureau."""
     env = os.environ.get("CAPTURE_REUNION_CLAUDE")
-    candidates = [env] if env else []
-    candidates.append(shutil.which("claude"))
+    if env and Path(env).is_file():
+        return env  # choisi par l'utilisateur : on lui fait confiance
+    candidates = [shutil.which("claude")]
     if sys.platform == "win32":
         home = Path.home()
+        appdata = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
+        local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+        for folder in _registry_path_dirs():
+            candidates += [str(Path(folder) / "claude.exe"), str(Path(folder) / "claude.cmd")]
         candidates += [
             str(home / ".local" / "bin" / "claude.exe"),
-            str(Path(os.environ.get("APPDATA", home)) / "npm" / "claude.cmd"),
-            str(Path(os.environ.get("LOCALAPPDATA", home)) / "Programs" / "claude" / "claude.exe"),
+            str(home / ".claude" / "local" / "claude.exe"),
+            str(home / ".claude" / "local" / "claude.cmd"),
+            str(appdata / "npm" / "claude.cmd"),
+            str(local / "Programs" / "claude" / "claude.exe"),
         ]
+        # Claude Code fourni avec l'application de bureau (dossier versionné).
+        for root in (appdata / "Claude" / "claude-code", local / "Claude" / "claude-code"):
+            if root.is_dir():
+                found = sorted(root.glob("*/claude.exe"), reverse=True) + sorted(root.glob("*/*/claude.exe"), reverse=True)
+                candidates += [str(p) for p in found]
+    seen = set()
     for candidate in candidates:
-        if candidate and Path(candidate).is_file():
+        if not candidate or candidate.lower() in seen or not Path(candidate).is_file():
+            continue
+        seen.add(candidate.lower())
+        if _is_claude_code(candidate):
             return candidate
     return None
 
@@ -80,9 +139,7 @@ class ClaudeCode(Engine):
     def connect(self) -> str:
         self.executable = self.executable or find_claude()
         if not self.executable:
-            raise LLMError(
-                "Claude Code est introuvable. Installez-le (https://claude.com/claude-code), "
-                "puis tapez « claude » dans un terminal pour vous connecter à votre compte Claude.")
+            raise LLMError("Claude Code est introuvable.\n" + INSTALL_HELP)
         try:
             proc = subprocess.run([self.executable, "--version"], capture_output=True, text=True,
                                   timeout=60, creationflags=NO_WINDOW)
