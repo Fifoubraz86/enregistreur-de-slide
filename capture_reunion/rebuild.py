@@ -5,11 +5,18 @@ choix (celui de l'utilisateur, ou le masque par défaut).
 Lecture des diapos :
 1. par une IA qui voit les images (Claude via Claude Code, ou un modèle de vision dans
    LM Studio) : meilleure structure (titre, niveaux de puces, figures) ;
-2. sinon par OCR local (RapidOCR, hors ligne) : texte fiable, structure déduite de la
-   mise en page.
+2. sinon par OCR local (RapidOCR, hors ligne). Une diapo lue par OCR est reconstruite
+   en mode « hybride » : titre en texte modifiable dans le masque, et le corps de la
+   diapo d'origine en image (le texte reconnu va dans les notes). Toujours propre, là
+   où une mise en page déduite de l'OCR est souvent fausse.
 
-Les lectures sont gardées dans ``diapos_lues.json`` : refaire le PowerPoint avec un
-autre masque ne relit pas les diapos (et ne reconsomme pas de quota).
+L'IA lit les diapos par paquets de 5 ; chaque paquet est gardé aussitôt dans
+``diapos_lues.json`` : une lecture interrompue reprend où elle s'était arrêtée, et
+refaire le PowerPoint avec un autre masque ne relit pas les diapos (ni ne reconsomme
+de quota).
+
+Les diapos dévoilées par étapes (ligne 1, puis 1 + 2, puis 1 + 2 + 3) sont réunies :
+seule la plus complète est gardée, avec les notes de toutes les étapes.
 """
 
 from __future__ import annotations
@@ -25,6 +32,8 @@ import cv2
 import numpy as np
 
 CACHE_FILE = "diapos_lues.json"
+PACKET = 5  # diapos lues par l'IA entre deux sauvegardes
+OCR_ENGINE = "OCR local"
 FIGURES_DIR = "diapos_figures"
 _BULLET = re.compile(r"^\s*(?:[•●○◦▪▫■□‣∙·\-–—*>]|\d{1,2}[.)])\s*")
 
@@ -40,6 +49,8 @@ class SlideContent:
     source: str = ""
     """Image d'origine (chemin relatif au dossier de session)."""
     engine: str = ""
+    title_bottom: float = 0.0
+    """Bas du titre sur la capture (fraction de la hauteur), connu avec l'OCR."""
 
     @classmethod
     def from_dict(cls, data: dict) -> "SlideContent":
@@ -58,7 +69,8 @@ class SlideContent:
                 figures.append(_clamp_box(tuple(float(v) for v in box)))
         return cls(int(data.get("index") or 0), str(data.get("title") or "").strip(), bullets,
                    [f for f in figures if f[2] > 0.02 and f[3] > 0.02],
-                   str(data.get("source") or ""), str(data.get("engine") or ""))
+                   str(data.get("source") or ""), str(data.get("engine") or ""),
+                   float(data.get("title_bottom") or 0.0))
 
 
 def _clamp_box(box) -> Box:
@@ -209,7 +221,7 @@ def ocr_slide(image: np.ndarray, index: int = 0, vocab: Optional[dict[str, str]]
 
     text_lines = [l for l in lines if not in_figure(l)]  # légendes d'axes, etc. : restent dans l'image
     if not text_lines:
-        return SlideContent(index, figures=figures, engine="OCR local")
+        return SlideContent(index, figures=figures, engine=OCR_ENGINE)
     text_lines.sort(key=lambda l: (l.cy, l.x0))
 
     # Titre : la plus grande écriture dans le haut de la diapo.
@@ -258,7 +270,9 @@ def ocr_slide(image: np.ndarray, index: int = 0, vocab: Optional[dict[str, str]]
             else:
                 bullets.append((clean, level))
             prev = (x0, max(l.y1 for l in row))
-    return SlideContent(index, title, bullets, figures, engine="OCR local")
+    title_bottom = max((l.y1 for l in title_lines), default=0.0) / h
+    return SlideContent(index, title, bullets, figures, engine=OCR_ENGINE,
+                        title_bottom=round(title_bottom, 4))
 
 
 COMMON_ACCENTED = """
@@ -346,8 +360,14 @@ def read_slides(
     progress: Optional[Callable[[float], None]] = None,
     use_cache: bool = True,
     glossary=None,
+    cancelled: Optional[Callable[[], bool]] = None,
 ) -> tuple[list[SlideContent], list[str]]:
-    """Lit toutes les diapos (IA si possible, sinon OCR). Renvoie (contenus, avertissements)."""
+    """Lit toutes les diapos (IA si possible, sinon OCR). Renvoie (contenus, avertissements).
+
+    L'IA lit par paquets de ``PACKET`` diapos, sauvegardés au fur et à mesure : après une
+    interruption (annulation, plantage, PC éteint), la lecture reprend au paquet suivant.
+    Une diapo que l'IA n'a pas su lire est lue par OCR, sans faire échouer les autres.
+    """
     from .llm import LLMError
 
     warnings: list[str] = []
@@ -363,60 +383,179 @@ def read_slides(
         stat = Path(path).stat()
         return f"{Path(path).name}:{stat.st_size}:{int(stat.st_mtime)}"
 
+    def remember(n: int, path: Path, c: SlideContent) -> None:
+        c.index, c.source = n, Path(path).name
+        cache[key(path)] = {**asdict(c), "bullets": [{"text": t, "level": lv} for t, lv in c.bullets],
+                            "figures": [{"box": list(b)} for b in c.figures]}
+
+    def save() -> None:
+        try:
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+        except OSError:
+            pass
+
+    def check() -> None:
+        if cancelled and cancelled():
+            save()
+            from .transcribe import Cancelled
+
+            raise Cancelled("Reconstruction annulée (la lecture reprendra où elle s'est arrêtée).")
+
     contents: dict[int, SlideContent] = {}
     todo = []
     for n, path in enumerate(images, start=1):
         cached = cache.get(key(path))
-        if cached and (engine is None or cached.get("engine") != "OCR local"):
+        stale_ocr = cached and cached.get("engine") == OCR_ENGINE and (
+            engine is not None or "title_bottom" not in cached)  # ancienne lecture OCR
+        if cached and not stale_ocr:
             contents[n] = SlideContent.from_dict({**cached, "index": n})
         else:
             todo.append((n, path))
 
+    total = max(1, len(todo))
+    done = 0
     if todo and engine is not None:
         try:
             engine.connect()
-            read = engine.read_slides([p for _, p in todo])
-            by_index = {int(d.get("index") or 0): d for d in read}
-            for k, (n, path) in enumerate(todo, start=1):
-                data = by_index.get(k)
-                if data:
-                    content = SlideContent.from_dict({**data, "index": n})
-                    if content.figures:
-                        image = read_image(path)
-                        try:
-                            text_boxes = [(float(b[:, 0].min()), float(b[:, 1].min()),
-                                           float(b[:, 0].max()), float(b[:, 1].max()))
-                                          for b, _, _ in _ocr(image)]
-                        except RuntimeError:
-                            text_boxes = []
-                        content.figures = refine_figures(content.figures, detect_figures(image, text_boxes))
-                    content.engine = engine.display_name
-                    contents[n] = content
         except LLMError as exc:
-            warnings.append(f"Lecture par {engine.label} impossible ({exc}) : OCR local utilisé.")
-        if progress:
-            progress(0.5)
+            warnings.append(f"Lecture par {engine.label} impossible ({exc}) : lecture sans IA.")
+            engine = None
+    if todo and engine is not None:
+        missed = 0
+        for start in range(0, len(todo), PACKET):
+            check()
+            packet = todo[start:start + PACKET]
+            try:
+                read = engine.read_slides([p for _, p in packet])
+            except LLMError as exc:
+                warnings.append(f"Lecture par {engine.label} interrompue ({exc}) : "
+                                "les diapos restantes sont lues sans IA.")
+                break
+            by_index = {int(d.get("index") or 0): d for d in read if isinstance(d, dict)}
+            for k, (n, path) in enumerate(packet, start=1):
+                data = by_index.get(k)
+                if not data:
+                    missed += 1
+                    continue
+                content = SlideContent.from_dict({**data, "index": n})
+                if content.figures:
+                    image = read_image(path)
+                    try:
+                        text_boxes = [(float(b[:, 0].min()), float(b[:, 1].min()),
+                                       float(b[:, 0].max()), float(b[:, 1].max()))
+                                      for b, _, _ in _ocr(image)]
+                    except RuntimeError:
+                        text_boxes = []
+                    content.figures = refine_figures(content.figures, detect_figures(image, text_boxes))
+                content.engine = engine.display_name
+                contents[n] = content
+                remember(n, path, content)
+            save()
+            done += len(packet)
+            if progress:
+                progress(0.9 * done / total)
+        if missed:
+            warnings.append(f"{missed} diapo(s) non lue(s) par {engine.label} : lues sans IA.")
 
     remaining = [(n, p) for n, p in todo if n not in contents]
     vocab = accent_vocabulary(glossary) if remaining else {}
+    start_p = 0.9 * done / total if progress else 0
     for i, (n, path) in enumerate(remaining, start=1):
+        check()
         contents[n] = ocr_slide(read_image(path), n, vocab)
+        remember(n, path, contents[n])
         if progress:
-            progress(0.5 + 0.5 * i / len(remaining))
+            progress(start_p + (1 - start_p) * i / len(remaining))
 
     for n, path in enumerate(images, start=1):
-        c = contents[n]
-        c.index = n
-        c.source = Path(path).name
-        cache[key(path)] = {**asdict(c), "bullets": [{"text": t, "level": lv} for t, lv in c.bullets],
-                            "figures": [{"box": list(b)} for b in c.figures]}
-    try:
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
-    except OSError:
-        pass
+        remember(n, path, contents[n])
+    save()
     if progress:
         progress(1.0)
     return [contents[n] for n in range(1, len(images) + 1)], warnings
+
+
+# ---------------------------------------------------------------- diapos par étapes
+def _similar(a: str, b: str) -> float:
+    from difflib import SequenceMatcher
+
+    a, b = _strip_accents(a.lower()).strip(), _strip_accents(b.lower()).strip()
+    if not a and not b:
+        return 1.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def text_contained(a: SlideContent, b: SlideContent) -> Optional[bool]:
+    """Le texte de ``a`` se retrouve-t-il dans ``b`` (même titre, puces de ``a`` présentes) ?
+    None : pas assez de texte pour en juger."""
+    if not (a.title or a.bullets) or not (b.title or b.bullets):
+        return None
+    if _similar(a.title, b.title) < 0.8:
+        return False
+    if len(b.bullets) < len(a.bullets):
+        return False
+    return all(max((_similar(t, u) for u, _ in b.bullets), default=0) >= 0.8 for t, _ in a.bullets)
+
+
+def image_contained(a: np.ndarray, b: np.ndarray, tolerance: float = 0.08) -> bool:
+    """Vrai si le contenu (texte, traits) de la capture ``a`` est toujours en place dans ``b``."""
+    from .slides import change_ratios, to_gray
+
+    def small(img):
+        gray = to_gray(img)
+        h, w = gray.shape[:2]
+        return cv2.GaussianBlur(cv2.resize(gray, (480, max(8, int(h * 480 / w))),
+                                           interpolation=cv2.INTER_AREA), (3, 3), 0)
+
+    sa, sb = small(a), small(b)
+    if sb.shape != sa.shape:
+        sb = cv2.resize(sb, (sa.shape[1], sa.shape[0]), interpolation=cv2.INTER_AREA)
+    _, removed = change_ratios(sb, sa)
+    return removed <= tolerance
+
+
+def group_progressive(contents: list[SlideContent], images: list[Path]) -> list[list[int]]:
+    """Regroupe les diapos consécutives qui se complètent ; renvoie des listes de positions."""
+    groups: list[list[int]] = []
+    previous_image = None
+    for k, (content, path) in enumerate(zip(contents, images)):
+        try:
+            image = read_image(path)
+        except (ValueError, OSError):
+            image = None
+        if groups and previous_image is not None and image is not None:
+            last = contents[groups[-1][-1]]
+            by_text = text_contained(last, content)
+            if by_text is not False and image_contained(previous_image, image):
+                groups[-1].append(k)
+                previous_image = image
+                continue
+        groups.append([k])
+        previous_image = image
+    return groups
+
+
+def merge_progressive(
+    contents: list[SlideContent], images: list[Path], notes: Optional[dict[int, str]] = None
+) -> tuple[list[SlideContent], dict[int, str]]:
+    """Garde la diapo la plus complète de chaque groupe, renumérotée, avec les notes de
+    toutes ses étapes. Renvoie (diapos gardées, notes par nouveau numéro)."""
+    notes = notes or {}
+    kept: list[SlideContent] = []
+    merged_notes: dict[int, str] = {}
+    for number, group in enumerate(group_progressive(contents, images), start=1):
+        members = [contents[k] for k in group]
+        final = copy.copy(members[-1])
+        texts = [notes.get(m.index, "") for m in members]
+        note = "\n\n".join(t for t in texts if t.strip())
+        if len(members) > 1:
+            steps = ", ".join(str(m.index) for m in members)
+            note = (f"Diapo dévoilée en {len(members)} étapes (captures {steps}).\n\n{note}").strip()
+        final.index = number
+        kept.append(final)
+        if note:
+            merged_notes[number] = note
+    return kept, merged_notes
 
 
 # ---------------------------------------------------------------- PowerPoint
@@ -519,8 +658,13 @@ def build_rebuilt_pptx(
     output: Path,
     template: Optional[Path] = None,
     notes: Optional[dict[int, str]] = None,
+    hybrid_ocr: bool = True,
 ) -> Path:
-    """Présentation reconstruite : titre et puces en texte modifiable, figures en images."""
+    """Présentation reconstruite : titre et puces en texte modifiable, figures en images.
+
+    ``hybrid_ocr`` : une diapo lue par OCR garde son corps en image (seul le titre est
+    réécrit), plutôt qu'une mise en page déduite de l'OCR, souvent approximative.
+    """
     from pptx.enum.shapes import PP_PLACEHOLDER
     from pptx.util import Emu
 
@@ -537,7 +681,8 @@ def build_rebuilt_pptx(
     margin = int(prs.slide_width * 0.04)
 
     for c in contents:
-        has_body = bool(c.bullets)
+        hybrid = hybrid_ocr and c.engine == OCR_ENGINE
+        has_body = bool(c.bullets) and not hybrid
         layout = _find_layout(prs, has_body)
         slide = prs.slides.add_slide(layout)
         title_ph = body_ph = None
@@ -566,7 +711,9 @@ def build_rebuilt_pptx(
         if body_ph is not None:
             area = (body_ph.left, body_ph.top, body_ph.width, body_ph.height)
 
-        image = read_image(folder / "diapos" / c.source) if c.figures else None
+        if hybrid:
+            _place_capture(slide, read_image(folder / "diapos" / c.source), c, area, fig_dir, margin)
+        image = read_image(folder / "diapos" / c.source) if c.figures and not hybrid else None
         if body_ph is not None:
             if c.figures:  # texte à gauche, figures à droite (les 4 valeurs ensemble, cf. masque)
                 body_ph.left, body_ph.top = Emu(area[0]), Emu(area[1])
@@ -579,7 +726,7 @@ def build_rebuilt_pptx(
                 para.level = level
                 for run in para.runs:
                     run.font.size = size
-        if c.figures and image is not None:
+        if c.figures and image is not None and not hybrid:
             ih, iw = image.shape[:2]
             if body_ph is not None:
                 fx = area[0] + int(area[2] * 0.55)
@@ -605,8 +752,28 @@ def build_rebuilt_pptx(
         add_slide_number(slide, c.index)
         note = (notes or {}).get(c.index, "")
         source = f"Capture d'origine : diapos/{c.source} — lecture : {c.engine}"
+        if hybrid and c.bullets:
+            recognized = "\n".join("  " * lv + "• " + t for t, lv in c.bullets)
+            source = f"Texte reconnu sur la diapo :\n{recognized}\n\n{source}"
         slide.notes_slide.notes_text_frame.text = f"{note}\n\n{source}".strip()
 
     output = Path(output)
     prs.save(str(output))
     return output
+
+
+def _place_capture(slide, image: np.ndarray, c: SlideContent, area, fig_dir: Path, margin: int) -> None:
+    """Mode hybride : la capture, sans son titre (déjà réécrit dans le masque), ajustée
+    dans la zone de contenu."""
+    ih, iw = image.shape[:2]
+    top = int(c.title_bottom * ih) + ih // 100 if c.title and c.title_bottom else 0
+    crop = image[top:] if ih - top > ih * 0.3 else image
+    path = fig_dir / f"diapo_{c.index:03d}_capture.png"
+    ok, buf = cv2.imencode(".png", crop)
+    if not ok:
+        return
+    buf.tofile(str(path))
+    ch, cw = crop.shape[:2]
+    scale = min(area[2] / cw, area[3] / ch)
+    pw, ph = int(cw * scale), int(ch * scale)
+    slide.shapes.add_picture(str(path), area[0] + (area[2] - pw) // 2, area[1] + (area[3] - ph) // 2, pw, ph)

@@ -224,3 +224,37 @@ def test_black_frames_are_reported(tmp_path, monkeypatch):
     time.sleep(1.0)
     assert r.black_seconds > 0.5
     r.stop()
+
+
+def test_planned_duration_stops_without_trimming(tmp_path, monkeypatch):
+    monkeypatch.setattr(rec_mod, "_WindowSource", FakeSource)
+    r = rec_mod.Recorder(1, tmp_path, record_audio=False, detect_slides=False, max_duration=3600)
+    r._t0 = time.monotonic() - 1800
+    assert not r.should_auto_stop and 1790 < r.remaining <= 1800
+    r._t0 = time.monotonic() - 3601
+    r._last_image_activity = time.monotonic()
+    assert r.planned_stop and r.should_auto_stop and not r.idle_stop and r.remaining == 0
+
+
+def test_black_window_is_brought_back(tmp_path, monkeypatch):
+    from capture_reunion import windows
+
+    class BlackSource(FakeSource):
+        def latest(self):
+            return np.zeros((360, 640, 4), np.uint8)
+
+    try:
+        find_ffmpeg()
+    except FileNotFoundError:
+        pytest.skip("ffmpeg absent")
+    calls = []
+    monkeypatch.setattr(windows, "bring_to_front", lambda hwnd: calls.append(hwnd) or True)
+    monkeypatch.setattr(rec_mod, "_WindowSource", BlackSource)
+    monkeypatch.setattr(rec_mod, "ACTIVITY_INTERVAL", 0.1)
+    monkeypatch.setattr(rec_mod, "BLACK_RECOVERY_AFTER", 0.5)
+    monkeypatch.setattr(rec_mod, "BLACK_RECOVERY_PAUSE", 60)
+    r = rec_mod.Recorder(42, tmp_path, fps=5, record_audio=False, detect_slides=False)
+    r.start()
+    time.sleep(1.5)
+    r.stop()
+    assert calls == [42] and r.black_recoveries == 1  # une seule tentative par minute

@@ -54,9 +54,13 @@ class StubRecorder:
     slide_count = 0
     audio_warning = ""
     auto_stop_after = 180
+    recover_black = True
+    black_seconds = 0
 
-    def __init__(self, idle, stop_now=False, silent=True):
-        self.idle_seconds, self.should_auto_stop, self.elapsed = idle, stop_now, 95
+    def __init__(self, idle, stop_now=False, silent=True, remaining=None):
+        self.idle_seconds, self.idle_stop, self.elapsed = idle, stop_now, 95
+        self.remaining = remaining
+        self.planned_stop = remaining == 0
         self._silent = silent
 
     def audio_levels(self):
@@ -77,10 +81,47 @@ def test_tick_shows_levels_idle_and_silence_warning(app, monkeypatch):
 def test_tick_triggers_auto_stop(app, monkeypatch):
     w = gui.MainWindow()
     calls = []
-    monkeypatch.setattr(w, "stop_recording", lambda auto=False: calls.append(auto))
+    monkeypatch.setattr(w, "stop_recording", lambda auto=False, planned=False: calls.append((auto, planned)))
     w.recorder = StubRecorder(idle=200, stop_now=True)
     w._tick()
-    assert calls == [True] and w._last_auto_stop
+    assert calls == [(True, False)] and w._last_auto_stop
+
+
+def test_planned_duration_countdown_and_stop(app, monkeypatch):
+    w = gui.MainWindow()
+    calls = []
+    monkeypatch.setattr(w, "stop_recording", lambda auto=False, planned=False: calls.append((auto, planned)))
+    w.recorder = StubRecorder(idle=5, remaining=600)
+    w._tick()
+    assert "Fin prévue dans 00:10:00" in w.status_label.text() and calls == []
+    w.recorder = StubRecorder(idle=5, remaining=0)
+    w._tick()
+    assert calls == [(False, True)]
+
+
+def test_black_image_warning_mentions_recovery(app):
+    w = gui.MainWindow()
+    w.recorder = StubRecorder(idle=5)
+    w.recorder.hwnd, w.recorder.black_seconds = 7, 12
+    w._tick()
+    assert "ramène la fenêtre au premier plan" in w.warning_label.text()
+
+
+def test_transcribe_button_becomes_cancel(app, monkeypatch, tmp_path):
+    from capture_reunion.session import Session
+
+    w = gui.MainWindow()
+    w.session = Session(folder=tmp_path)
+    started = []
+    monkeypatch.setattr(w, "_run", lambda task: started.append(task))
+    w._transcribe()
+    assert started and w.transcribe_btn.text() == "Annuler la transcription"
+    w._transcribe()  # clic sur « Annuler »
+    assert w._cancel.is_set() and not w.transcribe_btn.isEnabled()
+    monkeypatch.setattr(gui.QMessageBox, "information", lambda *a: None)
+    w._task_failed("Transcription annulée.")
+    assert w.transcribe_btn.text() == "Transcrire" and w.transcribe_btn.isEnabled()
+    assert not w._cancel.is_set()
 
 
 def test_level_bar():

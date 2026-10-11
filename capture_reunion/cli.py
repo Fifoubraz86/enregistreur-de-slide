@@ -234,6 +234,7 @@ def _record(args) -> int:
         detector_settings=DetectorSettings(zone=args.zone),
         on_slide=lambda s: print(f"\nNouvelle diapo n°{s.index}"),
         auto_stop_after=args.arret_auto * 60 if args.arret_auto else None,
+        max_duration=args.duree * 60 if args.duree else None,
     )
     recorder.start()
     if recorder.audio_warning:
@@ -244,18 +245,19 @@ def _record(args) -> int:
             time.sleep(1)
             print(f"\r{int(recorder.elapsed // 60):02d}:{int(recorder.elapsed % 60):02d}  "
                   f"diapos : {recorder.slide_count}", end="", flush=True)
-            if args.duree and recorder.elapsed >= args.duree * 60:
+            if recorder.planned_stop:
+                print("\nDurée prévue atteinte.")
                 break
             if recorder.window_closed:
                 print("\nLa fenêtre a été fermée.")
                 break
-            if recorder.should_auto_stop:
+            if recorder.idle_stop:
                 print(f"\nAucune activité depuis {args.arret_auto:g} min : arrêt automatique.")
                 break
     except KeyboardInterrupt:
         pass
     print("\nFinalisation…")
-    session = recorder.stop(auto=recorder.should_auto_stop)
+    session = recorder.stop(auto=recorder.idle_stop)
     print(f"Enregistré dans {session.folder}")
     return 0
 

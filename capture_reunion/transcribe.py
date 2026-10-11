@@ -15,6 +15,7 @@ sans aucune analyse supplémentaire.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -41,6 +42,14 @@ MODELS = {
 DEFAULT_MODEL = "small"
 SPEAKERS = {"participants": "Participants", "moi": "Moi"}
 TRANSCRIPT_FILE = "transcription.srt"
+SUMMARY_CACHE = "resumes_par_diapo.json"  # reprise des résumés après une interruption
+
+
+class Cancelled(RuntimeError):
+    """L'utilisateur a annulé le traitement."""
+
+    def __init__(self, message: str = "Traitement annulé.") -> None:
+        super().__init__(message)
 
 
 def models_dir() -> Path:
@@ -147,7 +156,7 @@ def transcribe_tracks(
             if progress and duration:
                 progress(min(1.0, (i + seg.end / duration) / len(tracks)))
             if cancelled and cancelled():
-                raise RuntimeError("Transcription annulée.")
+                raise Cancelled("Transcription annulée.")
         per_track.append(found)
         spoken[track_language] += sum((s.end or s.start) - s.start for s in found)
         if progress:
@@ -319,6 +328,17 @@ def transcribe_session(
     """
     from .llm import LLMError
 
+    def check() -> None:
+        if cancelled and cancelled():
+            raise Cancelled("Transcription annulée.")
+
+    if progress and cancelled:  # chaque avancement vérifie aussi l'annulation
+        report = progress
+
+        def progress(p: float) -> None:
+            check()
+            report(p)
+
     warnings: list[str] = []
     client = make_engine(engine if use_llm else "aucun", llm_url, llm_model, claude_model,
                          allow_online, warnings) if llm is None else llm
@@ -340,6 +360,7 @@ def transcribe_session(
     segments, lang = transcribe_tracks(session_tracks(session), model, language, vocabulary,
                                        _stage(progress, *bounds["transcription"]), cancelled, whisper,
                                        hotwords=theme_terms)
+    check()
     srt = write_srt(segments, session.folder / TRANSCRIPT_FILE)
     paragraphs = merge_segments(segments, [t for t, _ in session.timeline if t > MIN_INTRO])
     summary = summarize([p.text for p in paragraphs], lang)
@@ -353,13 +374,27 @@ def transcribe_session(
     if client:
         try:
             parts = _parts_for_summary(session, paragraphs, lang)
+            cache_path = session.folder / SUMMARY_CACHE
+            try:
+                cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cache = {}
+
+            def save_cache() -> None:
+                try:
+                    cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+                except OSError:
+                    pass
+
             summarized, ai_text = client.summarize_all(parts, lang, session.window_title,
-                                                       _stage(progress, *bounds["resume"]))
+                                                       _stage(progress, *bounds["resume"]),
+                                                       cache=cache, on_part=save_cache)
             prefix = SLIDE_LABEL.get(lang, "Diapo") + " "
             slide_summaries = {label[len(prefix):]: text for label, text in summarized
                                if label.startswith(prefix) and text}
             session.ai = {"model": client.display_name, "summary": {lang: ai_text},
                           "slide_summaries": {lang: slide_summaries}}
+            check()
         except LLMError as exc:
             warnings.append(f"Résumé par {client.label} impossible : {exc}")
             ai_text, slide_summaries = "", {}
@@ -368,6 +403,7 @@ def transcribe_session(
     session.save()
 
     if translate:
+        check()
         from .translate import target_language
 
         target = target_language(lang)
@@ -398,6 +434,8 @@ def transcribe_session(
                 t_sentences = tr.translate_sentences(summary.sentences)
                 t_keywords = tr.translate_sentences(summary.keywords)
                 t_ai, t_slides = "", {}
+        except Cancelled:
+            raise
         except Exception as exc:  # la transcription reste utilisable sans traduction
             warnings.append(f"Traduction impossible : {exc}")
         else:

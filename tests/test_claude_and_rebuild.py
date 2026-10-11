@@ -74,8 +74,8 @@ def session(tmp_path, monkeypatch):
     monkeypatch.setattr(tr_mod, "load_audio", lambda p: np.zeros(60 * 16000, np.float32))
     (tmp_path / "piste_participants.m4a").write_bytes(b"")
     (tmp_path / "diapos").mkdir()
-    for i in (1, 2):
-        ok, buf = cv2.imencode(".png", chart_slide())
+    for i, title in ((1, "Neuroendocrine tumours: treatment"), (2, "Liver metastases: options")):
+        ok, buf = cv2.imencode(".png", chart_slide(title=title))
         buf.tofile(str(tmp_path / "diapos" / f"diapo_00{i}.png"))
     s = Session(folder=tmp_path, started_at="2026-10-10T10:00:00", duration=60,
                 tracks={"participants": "piste_participants.m4a"}, window_title="Webinar")
@@ -126,8 +126,26 @@ def _texts(slide):
     return [sh.text_frame.text for sh in slide.shapes if sh.has_text_frame]
 
 
-def test_rebuild_with_ocr_and_default_template(session):
+def test_rebuild_without_ai_is_hybrid(session):
+    """Sans IA : titre réécrit dans le masque, corps de la diapo en image, texte reconnu en notes."""
     out, warnings = rebuild_presentation(session)
+    prs = Presentation(str(out))
+    assert len(prs.slides) == 2 and warnings == []
+    slide = prs.slides[0]
+    assert "Neuroendocrine tumours: treatment" in _texts(slide)
+    assert not any("Lanreotide" in t for t in _texts(slide))
+    pictures = [sh for sh in slide.shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(pictures) == 1 and pictures[0].width > prs.slide_width * 0.5
+    title = next(sh for sh in slide.shapes if sh.has_text_frame and "treatment" in sh.text_frame.text)
+    assert pictures[0].top >= title.top + title.height - 1
+    capture = cv2.imread(str(session.folder / "diapos_figures" / "diapo_001_capture.png"))
+    assert capture.shape[0] < 720 * 0.9  # le titre d'origine a été retiré de l'image
+    notes = slide.notes_slide.notes_text_frame.text
+    assert "Texte reconnu" in notes and "  • Lanreotide or octreotide" in notes
+
+
+def test_rebuild_with_ocr_layout_and_default_template(session):
+    out, warnings = rebuild_presentation(session, hybrid_ocr=False)
     prs = Presentation(str(out))
     assert len(prs.slides) == 2 and warnings == []
     slide = prs.slides[0]
@@ -178,7 +196,7 @@ def test_rebuild_falls_back_to_ocr_when_ai_fails(session):
             raise LLMError("non connecté")
 
     out, warnings = rebuild_presentation(session, llm=Broken())
-    assert "OCR local utilisé" in warnings[0]
+    assert "lecture sans IA" in warnings[0]
     assert "Neuroendocrine tumours: treatment" in _texts(Presentation(str(out)).slides[0])
 
 
@@ -221,3 +239,28 @@ def test_french_slide_reconstruction_fixes_ocr_glitches(tmp_path):
     texts = [t for t, _ in c.bullets]
     assert "Après correction de l'hypokaliémie" in texts
     assert "Arrêt des antagonistes minéralocorticoïdes" in texts
+
+
+def test_all_in_one_without_ai(session, monkeypatch):
+    from capture_reunion import workflow
+    from capture_reunion.transcribe import Cancelled
+
+    monkeypatch.setattr(tr_mod, "load_model", lambda model: Whisper())
+    monkeypatch.setattr(workflow, "choose_engine", lambda *a, **k: "aucun")
+    statuses = []
+    paths, warnings = workflow.run_all(session, translate=False, status=statuses.append)
+    assert [p.name for p in paths] == ["diapos.pptx", "diapos_reconstruites.pptx", "compte-rendu.docx"]
+    assert warnings[0] == "Moteur IA utilisé : sans IA."
+    assert statuses[0] == "Recherche du moteur IA…" and "Transcription…" in statuses
+    assert Session.load(session.folder).transcript == "transcription.srt"
+    with pytest.raises(Cancelled):
+        workflow.run_all(session, engine="aucun", cancelled=lambda: True)
+
+
+def test_choose_engine_prefers_claude_then_lmstudio(monkeypatch):
+    from capture_reunion import workflow
+
+    monkeypatch.setattr("capture_reunion.claude_code.find_claude", lambda: "/x/claude")
+    assert workflow.choose_engine(allow_online=True, llm_url="http://127.0.0.1:9") == "claude"
+    # Données patients : Claude écarté ; LM Studio injoignable : sans IA.
+    assert workflow.choose_engine(allow_online=False, llm_url="http://127.0.0.1:9") == "aucun"

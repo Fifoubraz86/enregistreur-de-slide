@@ -90,11 +90,28 @@ class Engine:
     def summarize_all(
         self, parts: list[tuple[str, str]], language: str, title: str = "",
         progress: Optional[Callable[[float], None]] = None,
+        cache: Optional[dict] = None, on_part: Optional[Callable[[], None]] = None,
     ) -> tuple[list[tuple[str, str]], str]:
-        """Résumé de chaque partie (diapo) puis résumé global : (résumés, résumé global)."""
+        """Résumé de chaque partie (diapo) puis résumé global : (résumés, résumé global).
+
+        Une requête par diapo (adapté à la petite fenêtre de contexte d'un modèle local).
+        ``cache`` garde les résumés déjà faits (``on_part`` est appelé après chacun pour le
+        sauvegarder) : après une interruption, seules les diapos manquantes sont refaites.
+        """
+        import hashlib
+
         summarized = []
         for i, (label, text) in enumerate(parts):
-            summarized.append((label, self.summarize_part(text[:12000], language, label)))
+            key = hashlib.sha1(f"{self.display_name}|{language}|{label}|{text}".encode()).hexdigest()
+            if cache is not None and key in cache:
+                summary = cache[key]
+            else:
+                summary = self.summarize_part(text[:12000], language, label)
+                if cache is not None:
+                    cache[key] = summary
+                    if on_part:
+                        on_part()
+            summarized.append((label, summary))
             if progress:
                 progress((i + 1) / (len(parts) + 1))
         return summarized, self.summarize_global(summarized, language, title)
@@ -198,7 +215,8 @@ class LMStudio(Engine):
         return _THINK.sub("", text).strip()
 
     def read_slides(self, images: list[Path]) -> list[dict]:
-        """Lit chaque diapo avec un modèle de vision local (une requête par diapo)."""
+        """Lit chaque diapo avec un modèle de vision local (une requête par diapo, ce qui
+        ménage la fenêtre de contexte). Une diapo à la réponse illisible est omise."""
         import base64
 
         if not self.model:
@@ -217,7 +235,7 @@ class LMStudio(Engine):
             if isinstance(parsed, dict) and "slides" in parsed:
                 parsed = (parsed["slides"] or [None])[0]
             if not isinstance(parsed, dict):
-                raise LLMError(f"Réponse illisible pour la diapo {n}.")
+                continue  # réponse illisible : cette diapo seule sera lue sans IA
             parsed["index"] = n
             out.append(parsed)
         return out

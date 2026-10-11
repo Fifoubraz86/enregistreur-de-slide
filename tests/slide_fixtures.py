@@ -14,15 +14,21 @@ def _font(size):
     return ImageFont.load_default()
 
 
-def chart_slide(width=1280, height=720) -> np.ndarray:
+BULLETS = (("Somatostatin analogues first line", 0), ("Lanreotide or octreotide", 1),
+           ("PRRT after progression", 0), ("Liver-directed therapy", 0))
+
+
+def chart_slide(width=1280, height=720, title="Neuroendocrine tumours: treatment",
+                bullets=BULLETS, chart=True) -> np.ndarray:
     img = Image.new("RGB", (width, height), "white")
     d = ImageDraw.Draw(img)
-    d.text((60, 40), "Neuroendocrine tumours: treatment", fill=(20, 40, 90), font=_font(48))
+    d.text((60, 40), title, fill=(20, 40, 90), font=_font(48))
     y = 170
-    for text, indent in (("Somatostatin analogues first line", 0), ("Lanreotide or octreotide", 1),
-                         ("PRRT after progression", 0), ("Liver-directed therapy", 0)):
+    for text, indent in bullets:
         d.text((80 + indent * 50, y), f"• {text}", fill="black", font=_font(30))
         y += 60
+    if not chart:
+        return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
     # Graphique à droite : axes, barres, légende d'axe.
     x0, y0, x1, y1 = 760, 180, 1220, 620
     d.rectangle([x0, y0, x1, y1], outline=(180, 180, 180), width=2)

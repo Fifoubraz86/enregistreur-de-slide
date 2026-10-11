@@ -192,9 +192,15 @@ def rebuild_presentation(
     progress: Optional[Callable[[float], None]] = None,
     llm=None,
     glossary_path: Optional[Path] = None,
+    cancelled: Optional[Callable[[], bool]] = None,
+    merge_steps: bool = True,
+    hybrid_ocr: bool = True,
 ) -> tuple[Path, list[str]]:
-    """PowerPoint reconstruit (texte modifiable + figures) : (chemin, avertissements)."""
-    from .rebuild import build_rebuilt_pptx, read_slides
+    """PowerPoint reconstruit (texte modifiable + figures) : (chemin, avertissements).
+
+    ``merge_steps`` : les diapos dévoilées par étapes n'en font plus qu'une.
+    """
+    from .rebuild import build_rebuilt_pptx, merge_progressive, read_slides
     from .transcribe import make_engine
 
     images = session.slide_paths()
@@ -206,13 +212,143 @@ def rebuild_presentation(
     from .glossary import default_path, load
 
     contents, read_warnings = read_slides(images, session.folder, client, progress,
-                                          glossary=load(glossary_path or default_path()))
+                                          glossary=load(glossary_path or default_path()),
+                                          cancelled=cancelled)
     warnings += read_warnings
 
     notes: dict[int, str] = {}
     transcript, offset = resolve_transcript(session, transcript, offset)
     if transcript:
         notes = notes_by_slide(sections_for(session, transcript, offset), offset)
+    if merge_steps:
+        before = len(contents)
+        contents, notes = merge_progressive(contents, images, notes)
+        if len(contents) < before:
+            warnings.append(f"{before - len(contents)} diapo(s) dévoilée(s) par étapes réunie(s) "
+                            f"avec la version complète : {len(contents)} diapos au lieu de {before}.")
     output = build_rebuilt_pptx(contents, session.folder, session.folder / "diapos_reconstruites.pptx",
-                                template=template, notes=notes)
+                                template=template, notes=notes, hybrid_ocr=hybrid_ocr)
     return output, warnings
+
+
+def choose_engine(allow_online: bool = True, llm_url: Optional[str] = None,
+                  llm_model: Optional[str] = None) -> str:
+    """Meilleur moteur disponible : Claude (si installé et autorisé), sinon LM Studio
+    (s'il répond), sinon « aucun » (mode sans IA)."""
+    if allow_online:
+        from .claude_code import find_claude
+
+        if find_claude():
+            return "claude"
+    from .llm import LLMError, LMStudio
+
+    try:
+        LMStudio(llm_url or "http://localhost:1234", llm_model, timeout=10).connect()
+        return "lmstudio"
+    except LLMError:
+        return "aucun"
+
+
+ENGINE_NAMES = {"claude": "Claude", "lmstudio": "LM Studio (IA locale)", "aucun": "sans IA"}
+
+
+def run_all(
+    session: Session,
+    template: Optional[Path] = None,
+    engine: str = "auto",
+    claude_model: str = "sonnet",
+    allow_online: bool = True,
+    llm_url: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    whisper_model: str = "large-v3-turbo",
+    language: Optional[str] = None,
+    translate: bool = True,
+    vocabulary: str = "",
+    glossary_path: Optional[Path] = None,
+    theme: str = "",
+    merge_steps: bool = True,
+    progress: Optional[Callable[[float], None]] = None,
+    cancelled: Optional[Callable[[], bool]] = None,
+    status: Optional[Callable[[str], None]] = None,
+) -> tuple[list[Path], list[str]]:
+    """Mode tout-en-1 après l'enregistrement : transcription, PowerPoint des captures,
+    PowerPoint reconstruit et compte-rendu Word. Renvoie (fichiers créés, avertissements).
+
+    ``engine="auto"`` : Claude, sinon LM Studio, sinon sans IA (voir ``choose_engine``).
+    Une étape qui échoue n'empêche pas les suivantes.
+    """
+    from .glossary import default_path, load
+    from .transcribe import Cancelled, transcribe_session
+
+    def check() -> None:
+        if cancelled and cancelled():
+            raise Cancelled()
+
+    def say(text: str) -> None:
+        if status:
+            status(text)
+
+    def stage(start: float, end: float):
+        def report(p: float) -> None:
+            check()
+            if progress:
+                progress(start + (end - start) * p)
+        return report
+
+    paths: list[Path] = []
+    warnings: list[str] = []
+    if engine == "auto":
+        say("Recherche du moteur IA…")
+        engine = choose_engine(allow_online, llm_url, llm_model)
+    warnings.append(f"Moteur IA utilisé : {ENGINE_NAMES.get(engine, engine)}.")
+    glossary = load(glossary_path or default_path())
+
+    if not session.slides and session.video_path and session.video_path.exists():
+        say("Extraction des diapos…")
+        extract_slides(session, progress=stage(0.0, 0.05), cancelled=cancelled)
+
+    has_sound = bool(session.tracks or session.audio or session.video)
+    if has_sound:
+        say("Transcription…")
+        try:
+            transcribe_session(session, whisper_model, vocabulary, progress=stage(0.05, 0.6),
+                               cancelled=cancelled, language=language, translate=translate,
+                               engine=engine, claude_model=claude_model, allow_online=allow_online,
+                               llm_url=llm_url, llm_model=llm_model, glossary=glossary, theme=theme)
+            warnings += session.ai.get("warnings", [])
+        except Cancelled:
+            raise
+        except Exception as exc:
+            warnings.append(f"Transcription impossible : {exc}")
+    check()
+
+    if session.slides:
+        say("PowerPoint des captures…")
+        try:
+            paths.append(make_pptx(session, template))
+        except Exception as exc:
+            warnings.append(f"PowerPoint des captures impossible : {exc}")
+        check()
+        say("PowerPoint reconstruit…")
+        try:
+            path, rebuild_warnings = rebuild_presentation(
+                session, template, engine, claude_model, allow_online, llm_url, llm_model,
+                progress=stage(0.6, 0.95), glossary_path=glossary_path, cancelled=cancelled,
+                merge_steps=merge_steps)
+            paths.append(path)
+            warnings += rebuild_warnings
+        except Cancelled:
+            raise
+        except Exception as exc:
+            warnings.append(f"PowerPoint reconstruit impossible : {exc}")
+    check()
+
+    if session.transcript:
+        say("Compte-rendu Word…")
+        try:
+            paths += make_reports(session)
+        except Exception as exc:
+            warnings.append(f"Compte-rendu impossible : {exc}")
+    if progress:
+        progress(1.0)
+    return paths, warnings

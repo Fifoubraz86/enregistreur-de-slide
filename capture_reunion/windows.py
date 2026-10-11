@@ -188,6 +188,29 @@ if IS_WINDOWS:
     def window_title(hwnd: int) -> str:
         return _title(hwnd)
 
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.BringWindowToTop.argtypes = [wintypes.HWND]
+    user32.keybd_event.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, wintypes.DWORD, ctypes.c_void_p]
+    SW_RESTORE = 9
+    VK_MENU = 0x12
+    KEYEVENTF_KEYUP = 0x0002
+
+    def bring_to_front(hwnd: int) -> bool:
+        """Rouvre la fenêtre si elle est réduite et la passe au premier plan.
+
+        Windows refuse le premier plan à un programme qui n'a pas la main : un appui
+        simulé sur Alt (sans effet visible) lève ce blocage.
+        """
+        if not user32.IsWindow(hwnd):
+            return False
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, SW_RESTORE)
+        user32.keybd_event(VK_MENU, 0, 0, None)
+        user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, None)
+        user32.BringWindowToTop(hwnd)
+        return bool(user32.SetForegroundWindow(hwnd))
+
 else:  # Permet d'importer le module (tests, CLI d'extraction) hors Windows.
 
     def list_windows() -> list[WindowInfo]:
@@ -204,3 +227,6 @@ else:  # Permet d'importer le module (tests, CLI d'extraction) hors Windows.
 
     def window_title(hwnd: int) -> str:
         return ""
+
+    def bring_to_front(hwnd: int) -> bool:
+        return False

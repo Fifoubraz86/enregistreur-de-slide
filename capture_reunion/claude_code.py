@@ -204,9 +204,9 @@ class ClaudeCode(Engine):
     # -- regroupements pour économiser le quota ----------------------------
     def summarize_all(
         self, parts: list[tuple[str, str]], language: str, title: str = "",
-        progress: Optional[Callable[[float], None]] = None,
+        progress: Optional[Callable[[float], None]] = None, **_cache,
     ) -> tuple[list[tuple[str, str]], str]:
-        """Tous les résumés (par diapo + global) en un seul appel."""
+        """Tous les résumés (par diapo + global) en un seul appel (rien à reprendre)."""
         lang = LANGUAGE_NAMES.get(language, language)
         listing = "\n\n".join(f"### {label}\n{text[:12000]}" for label, text in parts)
         prompt = (

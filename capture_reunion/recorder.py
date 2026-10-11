@@ -20,6 +20,8 @@ from .slides import DetectorSettings, Slide, SlideDetector
 FIRST_FRAME_TIMEOUT = 4.0
 ACTIVITY_INTERVAL = 2.0  # secondes entre deux vérifications d'activité de l'image
 IMAGE_CHANGE_RATIO = 0.003  # part des pixels qui doit changer pour parler d'activité
+BLACK_RECOVERY_AFTER = 10.0  # image noire depuis 10 s : on ramène la fenêtre au premier plan
+BLACK_RECOVERY_PAUSE = 30.0  # délai minimal entre deux tentatives
 
 
 def image_activity(previous: Optional[np.ndarray], frame: np.ndarray) -> tuple[np.ndarray, bool]:
@@ -162,12 +164,18 @@ class Recorder:
         monitor_index: Optional[int] = None,
         auto_stop_after: Optional[float] = None,
         idle_margin: float = 10.0,
+        max_duration: Optional[float] = None,
+        recover_black: bool = True,
     ) -> None:
         """``hwnd`` : fenêtre à enregistrer, ou ``monitor_index`` (1, 2…) pour un écran entier.
 
         ``auto_stop_after`` : secondes sans activité (ni image qui change, ni son) au bout
         desquelles ``should_auto_stop`` devient vrai ; la fin morte est alors coupée en ne
         gardant que ``idle_margin`` secondes après la dernière activité.
+
+        ``max_duration`` : durée prévue (secondes) ; ``should_auto_stop`` devient vrai une
+        fois atteinte. ``recover_black`` : si l'image d'une fenêtre reste noire 10 s (lecteur
+        vidéo qui s'endort en arrière-plan), la fenêtre est ramenée au premier plan.
         """
         self.hwnd = hwnd
         self.monitor_index = monitor_index
@@ -209,6 +217,10 @@ class Recorder:
         self.auto_stopped = False
         self._last_image_activity: Optional[float] = None
         self._black_since: Optional[float] = None
+        self.max_duration = max_duration
+        self.recover_black = recover_black
+        self.black_recoveries = 0
+        self._last_recovery = 0.0
         from .power import KeepAwake
 
         self._keep_awake = KeepAwake()
@@ -244,8 +256,21 @@ class Recorder:
         return time.monotonic() - self.last_activity if self._t0 else 0.0
 
     @property
-    def should_auto_stop(self) -> bool:
+    def idle_stop(self) -> bool:
         return bool(self.auto_stop_after) and self.idle_seconds >= self.auto_stop_after
+
+    @property
+    def planned_stop(self) -> bool:
+        return bool(self.max_duration) and self.elapsed >= self.max_duration
+
+    @property
+    def remaining(self) -> Optional[float]:
+        """Secondes restantes avant la fin prévue (None : pas de durée prévue)."""
+        return max(0.0, self.max_duration - self.elapsed) if self.max_duration else None
+
+    @property
+    def should_auto_stop(self) -> bool:
+        return self.idle_stop or self.planned_stop
 
     def audio_levels(self) -> dict[str, dict]:
         """Par piste : niveau actuel (0-1) et secondes depuis le dernier son audible
@@ -343,6 +368,17 @@ class Recorder:
                 self._black_since = self._black_since or now
             else:
                 self._black_since = None
+            if (self.recover_black and self.hwnd is not None
+                    and self.black_seconds >= BLACK_RECOVERY_AFTER
+                    and now - self._last_recovery >= BLACK_RECOVERY_PAUSE):
+                self._last_recovery = now
+                try:
+                    from .windows import bring_to_front
+
+                    if bring_to_front(self.hwnd):
+                        self.black_recoveries += 1
+                except Exception:
+                    pass
 
     @property
     def black_seconds(self) -> float:

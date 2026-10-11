@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QProgressBar,
+    QProgressDialog,
     QPushButton,
     QRubberBand,
     QSpinBox,
@@ -54,6 +55,7 @@ from .windows import (
 
 Q = Qt.ConnectionType.QueuedConnection
 DEFAULT_DIR = Path.home() / "Videos" / "Capture reunion"
+REBUILD_LABEL = "PowerPoint reconstruit\n(texte modifiable)"
 LEGAL = (
     "Rappel : prévenez les participants avant d'enregistrer (RGPD). "
     "En RCP, les données patients imposent un stockage sécurisé."
@@ -85,6 +87,7 @@ class Task(QObject):
     done = Signal(object)
     failed = Signal(str)
     progress = Signal(float)
+    status = Signal(str)
 
     def __init__(self, fn: Callable, *args, **kwargs) -> None:
         super().__init__()
@@ -182,7 +185,9 @@ class MainWindow(QMainWindow):
         self.bridge.slide.connect(self._on_slide)
         self.bridge.window_closed.connect(self._on_window_closed)
         self._tasks: list[Task] = []
+        self._cancel = threading.Event()  # annulation du traitement long en cours
         self._last_auto_stop = False
+        self._last_planned_stop = False
 
         tabs = QTabWidget()
         tabs.addTab(self._build_record_tab(), "1. Enregistrer")
@@ -266,6 +271,30 @@ class MainWindow(QMainWindow):
         auto_row.addWidget(self.auto_stop_spin)
         auto_row.addWidget(QLabel("sans activité (ni image qui change, ni son)"), 1)
         form.addRow("Fin de réunion", auto_row)
+        planned_row = QHBoxLayout()
+        self.planned_check = QCheckBox("Arrêter au bout de")
+        self.planned_check.setChecked(self.settings.value("planned", False, type=bool))
+        self.planned_time = QTimeEdit()
+        self.planned_time.setDisplayFormat("H 'h' mm")
+        saved_planned = self.settings.value("planned_min", 60, type=int)
+        self.planned_time.setTime(QTime(saved_planned // 60, saved_planned % 60))
+        planned_row.addWidget(self.planned_check)
+        planned_row.addWidget(self.planned_time)
+        planned_row.addWidget(QLabel("(durée prévue de la réunion, sécurité si vous l'oubliez)"), 1)
+        form.addRow("Durée prévue", planned_row)
+        self.recover_check = QCheckBox(
+            "Si l'image devient noire 10 s, ramener la fenêtre au premier plan "
+            "(vidéo qui s'endort en arrière-plan)")
+        self.recover_check.setChecked(self.settings.value("recover_black", True, type=bool))
+        form.addRow(self.recover_check)
+        self.all_in_one_check = QCheckBox(
+            "Tout-en-1 : à la fin, transcrire (très précis), puis créer les deux PowerPoint "
+            "et le compte-rendu Word")
+        self.all_in_one_check.setToolTip(
+            "Utilise les réglages de l'onglet 2 (glossaire, modèle PowerPoint, données patients…). "
+            "IA : Claude s'il est installé et autorisé, sinon LM Studio s'il répond, sinon sans IA.")
+        self.all_in_one_check.setChecked(self.settings.value("all_in_one", False, type=bool))
+        form.addRow(self.all_in_one_check)
 
         zone_row = QHBoxLayout()
         self.zone_label = QLabel(zone_text(None))
@@ -399,6 +428,12 @@ class MainWindow(QMainWindow):
         self.settings.setValue("fps", self.fps_spin.value())
         self.settings.setValue("auto_stop", self.auto_stop_check.isChecked())
         self.settings.setValue("auto_stop_min", self.auto_stop_spin.value())
+        planned = self.planned_time.time()
+        planned_min = planned.hour() * 60 + planned.minute()
+        self.settings.setValue("planned", self.planned_check.isChecked())
+        self.settings.setValue("planned_min", planned_min)
+        self.settings.setValue("recover_black", self.recover_check.isChecked())
+        self.settings.setValue("all_in_one", self.all_in_one_check.isChecked())
 
         recorder = Recorder(
             hwnd,
@@ -406,6 +441,8 @@ class MainWindow(QMainWindow):
             window_title=selected.title,
             monitor_index=monitor_index,
             auto_stop_after=self.auto_stop_spin.value() * 60 if self.auto_stop_check.isChecked() else None,
+            max_duration=planned_min * 60 if self.planned_check.isChecked() and planned_min else None,
+            recover_black=self.recover_check.isChecked(),
             fps=self.fps_spin.value(),
             record_audio=self.audio_check.isChecked(),
             record_mic=self.mic_check.isChecked(),
@@ -425,6 +462,7 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
         self.recorder = recorder
         self._last_auto_stop = False
+        self._last_planned_stop = False
         self.preview.setText("Dernière diapo")
         self.preview.setPixmap(QPixmap())
         self.record_btn.setText("■  Arrêter l'enregistrement")
@@ -434,16 +472,17 @@ class MainWindow(QMainWindow):
         self.timer.start(500)
         self._tick()
 
-    def stop_recording(self, auto: bool = False) -> None:
+    def stop_recording(self, auto: bool = False, planned: bool = False) -> None:
         recorder = self.recorder
         if recorder is None:
             return
         self.timer.stop()
         self.record_btn.setEnabled(False)
         self.record_btn.setText("Finalisation de la vidéo…")
-        self.status_label.setText(
-            ("Arrêt automatique (aucune activité). " if auto else "")
-            + "Finalisation (assemblage vidéo et son)…")
+        self._last_planned_stop = planned
+        reason = ("Arrêt automatique (aucune activité). " if auto
+                  else "Durée prévue atteinte. " if planned else "")
+        self.status_label.setText(reason + "Finalisation (assemblage vidéo et son)…")
 
         def finish():
             try:
@@ -470,10 +509,15 @@ class MainWindow(QMainWindow):
         self.load_session(session)
         if problem:
             QMessageBox.warning(self, "Enregistrement", problem)
+        if self.all_in_one_check.isChecked() and session and (session.video or session.audio):
+            self.tabs.setCurrentIndex(1)
+            self._run_all()
+            return
         box = QMessageBox(self)
         box.setWindowTitle("Enregistrement terminé")
         auto = "Arrêt automatique faute d'activité ; la fin sans activité a été coupée.\n" \
-            if session and self._last_auto_stop else ""
+            if session and self._last_auto_stop else \
+            "Durée prévue atteinte.\n" if self._last_planned_stop else ""
         box.setText(f"{auto}Enregistrement terminé ({len(session.slides)} diapos détectées).")
         open_btn = box.addButton("Ouvrir le dossier", QMessageBox.ButtonRole.ActionRole)
         next_btn = box.addButton("Créer les diapos / compte-rendu", QMessageBox.ButtonRole.AcceptRole)
@@ -488,14 +532,19 @@ class MainWindow(QMainWindow):
         r = self.recorder
         if r is None:
             return
-        if r.should_auto_stop:
+        if r.idle_stop:
             self._last_auto_stop = True
             self.stop_recording(auto=True)
+            return
+        if r.planned_stop:
+            self.stop_recording(planned=True)
             return
         elapsed = format_timestamp(r.elapsed)
         slides = f" — {r.slide_count} diapo(s)" if r.detector else ""
         awake = " — mise en veille bloquée" if getattr(getattr(r, "_keep_awake", None), "active", False) else ""
         lines = [f"● Enregistrement en cours : {elapsed}{slides}{awake}"]
+        if r.remaining is not None:
+            lines.append(f"Fin prévue dans {format_timestamp(r.remaining)}")
         names = {"participants": "Son de l'ordinateur", "moi": "Micro"}
         levels = r.audio_levels()
         if levels:
@@ -511,9 +560,12 @@ class MainWindow(QMainWindow):
             warnings.append("⚠ Aucun son de l'ordinateur reçu depuis le début : le son de la réunion "
                             "est-il coupé (volume à 0, muet, ou volume de Zoom/Teams au minimum) ?")
         if getattr(r, "black_seconds", 0) >= 6:
-            warnings.append(f"⚠ L'image capturée est noire depuis {int(r.black_seconds)} s. Un jeu ou une "
-                            "vidéo en plein écran exclusif empêche la capture : passez-le en mode "
-                            "« fenêtré sans bordure » ou utilisez un autre écran.")
+            back = (" Le logiciel ramène la fenêtre au premier plan."
+                    if r.recover_black and r.hwnd is not None else "")
+            warnings.append(f"⚠ L'image capturée est noire depuis {int(r.black_seconds)} s.{back} "
+                            "Si cela persiste : un jeu ou une vidéo en plein écran exclusif empêche "
+                            "la capture (passez-le en « fenêtré sans bordure »), ou la vidéo se met "
+                            "en pause quand sa fenêtre est cachée.")
         if r.hwnd is not None and is_minimized(r.hwnd):
             warnings.append("⚠ La fenêtre est réduite : l'image est figée. Rouvrez-la "
                             "(elle peut rester derrière les autres fenêtres).")
@@ -706,12 +758,21 @@ class MainWindow(QMainWindow):
         sync_hint.setWordWrap(True)
         sync_hint.setStyleSheet("color: gray;")
         form.addRow(sync_hint)
+        self.merge_check = QCheckBox(
+            "PowerPoint reconstruit : réunir les diapos dévoilées par étapes (ligne 1, puis 1 + 2…)")
+        self.merge_check.setChecked(self.settings.value("merge_steps", True, type=bool))
+        form.addRow(self.merge_check)
         layout.addWidget(exp_box)
+
+        self.all_btn = QPushButton("Tout-en-1 : transcrire (très précis) + les deux PowerPoint + compte-rendu")
+        self.all_btn.setMinimumHeight(36)
+        self.all_btn.clicked.connect(self._run_all)
+        layout.addWidget(self.all_btn)
 
         row = QHBoxLayout()
         self.pptx_btn = QPushButton("PowerPoint des captures")
         self.pptx_btn.clicked.connect(self._make_pptx)
-        self.rebuild_btn = QPushButton("PowerPoint reconstruit\n(texte modifiable)")
+        self.rebuild_btn = QPushButton(REBUILD_LABEL)
         self.rebuild_btn.setToolTip(
             "Recrée de vraies diapos : titre et puces en texte modifiable, figures découpées, "
             "dans votre modèle (ou le masque par défaut). Lecture par le moteur IA choisi "
@@ -875,6 +936,11 @@ class MainWindow(QMainWindow):
         self._run(task)
 
     def _rebuild(self) -> None:
+        if self.rebuild_btn.text().startswith("Annuler"):
+            self._cancel.set()
+            self.rebuild_btn.setText("Annulation…")
+            self.rebuild_btn.setEnabled(False)
+            return
         if not self._need_session(with_slides=True):
             return
         from .workflow import rebuild_presentation
@@ -888,11 +954,15 @@ class MainWindow(QMainWindow):
                     llm_url=self.llm_url.text().strip() or "http://localhost:1234",
                     llm_model=self.llm_model_combo.currentData() or None,
                     transcript=self._transcript(), offset=self._offset(),
-                    glossary_path=Path(self.glossary_edit.text().strip()) if self.glossary_edit.text().strip() else None)
+                    glossary_path=Path(self.glossary_edit.text().strip()) if self.glossary_edit.text().strip() else None,
+                    merge_steps=self.merge_check.isChecked())
+        self.settings.setValue("merge_steps", self.merge_check.isChecked())
         self.progress.setValue(0)
         self.progress.setVisible(True)
-        self.rebuild_btn.setEnabled(False)
-        task = Task(lambda: rebuild_presentation(session, progress=task.progress.emit, **args))
+        self._cancel.clear()
+        self.rebuild_btn.setText("Annuler la reconstruction")
+        task = Task(lambda: rebuild_presentation(session, progress=task.progress.emit,
+                                                 cancelled=self._cancel.is_set, **args))
         task.progress.connect(lambda p: self.progress.setValue(int(p * 100)), Q)
         task.done.connect(self._rebuilt, Q)
         task.failed.connect(self._task_failed, Q)
@@ -901,11 +971,17 @@ class MainWindow(QMainWindow):
     def _rebuilt(self, result) -> None:
         path, warnings = result
         self.progress.setVisible(False)
+        self.rebuild_btn.setText(REBUILD_LABEL)
         if warnings:
             QMessageBox.warning(self, "PowerPoint reconstruit", "\n".join(warnings))
         self._created(path, self.rebuild_btn)
 
     def _transcribe(self) -> None:
+        if self.transcribe_btn.text().startswith("Annuler"):
+            self._cancel.set()
+            self.transcribe_btn.setText("Annulation…")
+            self.transcribe_btn.setEnabled(False)
+            return
         if not self._need_session():
             return
         from .transcribe import transcribe_session
@@ -936,11 +1012,12 @@ class MainWindow(QMainWindow):
         self.settings.setValue("translate", translate)
         self.progress.setValue(0)
         self.progress.setVisible(True)
-        self.transcribe_btn.setEnabled(False)
-        self.transcribe_btn.setText("Transcription…")
+        self._cancel.clear()
+        self.transcribe_btn.setText("Annuler la transcription")
         session = self.session
         task = Task(lambda: transcribe_session(session, model, vocabulary,
                                                progress=task.progress.emit,
+                                               cancelled=self._cancel.is_set,
                                                language=language, translate=translate,
                                                engine=engine, claude_model=claude_model,
                                                allow_online=allow_online, llm_url=llm_url,
@@ -1121,10 +1198,79 @@ class MainWindow(QMainWindow):
 
     def _task_failed(self, message: str) -> None:
         self.progress.setVisible(False)
-        for b in (self.extract_btn, self.pptx_btn, self.rebuild_btn, self.report_btn, self.transcribe_btn):
+        for b in (self.extract_btn, self.pptx_btn, self.rebuild_btn, self.report_btn,
+                  self.transcribe_btn, self.all_btn):
             b.setEnabled(True)
         self.transcribe_btn.setText("Transcrire")
+        self.rebuild_btn.setText(REBUILD_LABEL)
+        if self._cancel.is_set() and "annulé" in message.lower():
+            self._cancel.clear()
+            QMessageBox.information(self, "Annulé", message)
+            return
         QMessageBox.warning(self, "Erreur", message)
+
+    # ---------------------------------------------------------------- tout-en-1
+    def _run_all(self) -> None:
+        if not self._need_session():
+            return
+        from .llm import load_glossary
+        from .workflow import run_all
+
+        glossary_path = self.glossary_edit.text().strip()
+        try:
+            if glossary_path:
+                load_glossary(Path(glossary_path))
+        except OSError as exc:
+            QMessageBox.warning(self, "Glossaire", f"Glossaire illisible : {exc}")
+            return
+        _engine, claude_model, allow_online = self._engine_choice()
+        template = self.template_edit.text().strip()
+        self.settings.setValue("template", template)
+        self.settings.setValue("merge_steps", self.merge_check.isChecked())
+        session = self.session
+        args = dict(template=Path(template) if template else None, engine="auto",
+                    claude_model=claude_model, allow_online=allow_online,
+                    llm_url=self.llm_url.text().strip() or "http://localhost:1234",
+                    llm_model=self.llm_model_combo.currentData() or None,
+                    language=self.lang_combo.currentData() or None,
+                    translate=self.translate_check.isChecked(),
+                    vocabulary=self.vocab_edit.text().strip(),
+                    glossary_path=Path(glossary_path) if glossary_path else None,
+                    theme=self.theme_combo.currentData() or "",
+                    merge_steps=self.merge_check.isChecked())
+        self._cancel.clear()
+        dialog = QProgressDialog("Préparation…", "Annuler", 0, 100, self)
+        dialog.setWindowTitle("Tout-en-1")
+        dialog.setMinimumWidth(460)
+        dialog.setMinimumDuration(0)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.canceled.connect(self._cancel.set)
+        dialog.canceled.connect(lambda: dialog.setLabelText("Annulation à la fin de l'étape en cours…"))
+        dialog.show()
+        self.all_btn.setEnabled(False)
+        task = Task(lambda: run_all(session, progress=task.progress.emit, status=task.status.emit,
+                                    cancelled=self._cancel.is_set, **args))
+        task.progress.connect(lambda p: dialog.setValue(int(p * 100)), Q)
+        task.status.connect(dialog.setLabelText, Q)
+
+        def done(result):
+            dialog.close()
+            self.all_btn.setEnabled(True)
+            paths, warnings = result
+            self.load_session(session)
+            if warnings or not paths:
+                QMessageBox.information(self, "Tout-en-1", "\n".join(warnings) or "Aucun fichier créé.")
+            if paths:
+                self._created(paths, self.all_btn)
+
+        def failed(message):
+            dialog.close()
+            self._task_failed(message)
+
+        task.done.connect(done, Q)
+        task.failed.connect(failed, Q)
+        self._run(task)
 
     def _run(self, task: Task) -> None:
         self._tasks.append(task)

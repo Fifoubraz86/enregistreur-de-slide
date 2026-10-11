@@ -45,6 +45,12 @@ Deux règles à respecter :
 
 **Arrêt automatique** (activé par défaut, réglable) : après 3 minutes sans activité, c'est-à-dire sans image qui change notablement ni son (participants ou micro), l'enregistrement s'arrête tout seul et la fin morte est coupée (10 secondes de marge gardées). Pendant l'enregistrement, des indicateurs montrent le niveau du son de l'ordinateur et du micro. Si aucun son de l'ordinateur n'arrive après 30 secondes, une alerte suggère que le son est coupé.
 
+**Durée prévue** (facultatif) : cochez « Arrêter au bout de » et indiquez la durée de la réunion (ex. 1 h 00). Un compte à rebours s'affiche, et l'enregistrement s'arrête à l'heure dite si vous l'avez oublié.
+
+**Image noire :** si l'image d'une fenêtre reste noire 10 secondes (lecteur vidéo ou navigateur qui se met en pause quand sa fenêtre est cachée), le logiciel ramène cette fenêtre au premier plan, au plus une fois toutes les 30 secondes. Un jeu ou une vidéo en **plein écran exclusif** ne peut pas être capturé : passez-le en mode « fenêtré sans bordure ».
+
+**Tout-en-1** (case à cocher, ou bouton dans l'onglet 2) : dès la fin de l'enregistrement, le logiciel enchaîne la transcription (qualité « Très précis »), le PowerPoint des captures, le PowerPoint reconstruit et le compte-rendu Word, avec les réglages de l'onglet 2. Moteur IA choisi automatiquement : Claude s'il est installé et que la case « données patients » n'est pas cochée, sinon LM Studio s'il répond, sinon sans IA. Le bouton « Annuler » arrête à la fin de l'étape en cours.
+
 **Mise en veille :** pendant l'enregistrement, le logiciel empêche Windows de se mettre en veille et d'éteindre l'écran. Il rend la main à l'arrêt. Attention : refermer l'écran d'un portable déclenche quand même la mise en veille si Windows est réglé ainsi (Paramètres → Système → Alimentation → « Action à la fermeture du capot »).
 
 **Volume à 0 ou muet :** le logiciel enregistre le son que Windows envoie à la sortie audio. Il ne contourne pas un réglage qui coupe le son *avant* : le volume de Zoom/Teams au minimum, ou le volume de l'application dans le mélangeur de Windows. Avec le volume général de Windows à 0 ou en muet, le résultat dépend du pilote audio : faites un essai de 30 secondes (l'indicateur et l'alerte vous le diront). Pour ne rien entendre tout en enregistrant à coup sûr, le plus fiable est de garder le volume normal et de brancher un casque sans le porter.
@@ -79,9 +85,10 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
     **Modèle IA** : cliquez sur **Actualiser** pour lister les modèles de LM Studio (« ● chargé » indique ceux déjà en mémoire), puis choisissez-en un. S'il n'est pas chargé, LM Studio le charge à la première demande ; il faut pour cela que le chargement à la demande (« Just-In-Time model loading ») soit activé dans l'onglet Developer. Le premier traitement attend alors une à deux minutes. Si un autre modèle occupe déjà la carte graphique, déchargez-le d'abord.
 
     Le bouton **Tester** vérifie la connexion et charge le modèle choisi. Si LM Studio n'est pas lancé, le logiciel utilise automatiquement le traducteur Argos et le résumé par phrases clés. Les phrases réellement prononcées restent toujours en annexe, pour vérifier ce que l'IA affirme.
+  - Pendant la transcription, le bouton devient **« Annuler la transcription »**.
   - **Moteur IA** : trois choix.
     - **LM Studio** : IA locale, rien ne quitte le PC, gratuit.
-    - **Claude — votre abonnement** : passe par Claude Code, l'outil en ligne de commande d'Anthropic, et utilise votre abonnement Claude (Pro ou Max), sans clé API. Il faut l'installer une fois (<https://claude.com/claude-code>), puis taper `claude` dans un terminal pour vous connecter. Le texte et les images partent chez Anthropic et consomment le quota de l'abonnement : le logiciel regroupe le travail en très peu d'appels, avec Sonnet par défaut, plus économe qu'Opus. Votre consommation réelle s'affiche dans Claude Code avec `/usage`.
+    - **Claude — votre abonnement** : passe par Claude Code, l'outil en ligne de commande d'Anthropic, et utilise votre abonnement Claude (Pro ou Max), sans clé API. Claude Code est **distinct de l'application Claude** : installez-le une fois (PowerShell : `irm https://claude.ai/install.ps1 | iex`), puis tapez `claude` dans un nouveau terminal pour vous connecter. Le bouton **Détecter** le retrouve ; sinon, indiquez le chemin de `claude.exe` dans le champ « Claude Code ». Le texte et les images partent chez Anthropic et consomment le quota de l'abonnement : le logiciel regroupe le travail en très peu d'appels, avec Sonnet par défaut, plus économe qu'Opus. Votre consommation réelle s'affiche dans Claude Code avec `/usage`.
     - **Aucune** : traduction Argos et résumé par phrases clés.
 
     Cochez **« Réunion avec données de patients »** pour qu'aucun texte ni aucune image ne parte en ligne : Claude est alors désactivé, même s'il est choisi.
@@ -104,8 +111,11 @@ Ouvrez l'onglet **« 2. Diapos et compte-rendu »** :
 - **PowerPoint reconstruit (texte modifiable)** : recrée de vraies diapos à partir des captures. Le titre et les puces (avec leurs niveaux) deviennent du texte modifiable, et les graphiques, photos et schémas sont découpés et placés comme images.
   - **Masque** : celui du champ « Modèle PowerPoint », ou à défaut le masque par défaut `modeles/masque_par_defaut.pptx` (masque du service : titre bleu, bandeau dégradé, numéro de diapo). Un masque neutre est aussi fourni : `modeles/masque_sobre.pptx`. Pour changer de masque par défaut, remplacez simplement ce fichier.
   - **Accents** : l'OCR local perd parfois les accents. Sur les diapos en français, le logiciel les rétablit pour les mots connus (termes du glossaire et mots courants), et corrige « I' » en « l' ».
-  - **Lecture des diapos** : par le moteur IA s'il voit les images (Claude, ou un modèle de vision dans LM Studio). Sinon par OCR sur le PC (hors ligne), qui lit bien le texte mais devine la mise en forme plus grossièrement.
-  - **Lectures mémorisées** dans `diapos_lues.json` : refaire le PowerPoint avec un autre masque ne relit pas les diapos et ne reconsomme pas de quota.
+  - **Lecture des diapos** : par le moteur IA s'il voit les images (Claude, ou un modèle de vision dans LM Studio).
+  - **Sans IA (mode hybride)** : le titre est réécrit en texte modifiable dans le masque, et le corps de la diapo est gardé en image, sous le titre. Le texte reconnu par l'OCR est mis dans les notes, pour le copier. C'est moins modifiable, mais toujours propre.
+  - **Par paquets de 5 diapos** : chaque paquet lu par l'IA est mémorisé aussitôt dans `diapos_lues.json`. Après une annulation ou un plantage, la lecture reprend où elle s'était arrêtée. Une diapo que l'IA n'arrive pas à lire est lue sans IA, sans gêner les autres. Les résumés diapo par diapo de l'IA locale sont mémorisés de la même façon (`resumes_par_diapo.json`).
+  - **Diapos dévoilées par étapes** (ligne 1, puis 1 + 2, puis 1 + 2 + 3) : elles sont réunies en une seule diapo, la plus complète. Ses notes regroupent ce qui a été dit pendant toutes les étapes. Décochez « réunir les diapos dévoilées par étapes » pour garder chaque capture.
+  - Refaire le PowerPoint avec un autre masque ne relit pas les diapos et ne reconsomme pas de quota.
   - Les notes de chaque diapo contiennent la transcription et le nom de la capture d'origine. Relisez toujours le résultat : une lecture automatique peut se tromper.
 - **Créer le compte-rendu Word** : chaque diapo suivie de la transcription correspondante, puis le résumé. Si une traduction existe, `compte-rendu_fr.docx` (ou `_en`) est créé en plus.
 
